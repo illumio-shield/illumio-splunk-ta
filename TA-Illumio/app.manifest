@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "2.0.0",
+  "info": {
+    "title": "Illumio Add-on for Splunk",
+    "id": {
+      "group": null,
+      "name": "TA-Illumio",
+      "version": "3.2.2"
+    },
+    "author": [
+      {
+        "name": "Illumio Inc.",
+        "email": null,
+        "company": null
+      }
+    ],
+    "releaseDate": null,
+    "description": "The Illumio Technology Add-On for Splunk that enriches Illumio data with Common Information Model (CIM) field names, event types and tags.",
+    "classification": {
+      "intendedAudience": null,
+      "categories": [],
+      "developmentStatus": null
+    },
+    "commonInformationModels": null,
+    "license": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "privacyPolicy": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "releaseNotes": {
+      "name": null,
+      "text": "./README.md",
+      "uri": null
+    }
+  },
+  "dependencies": null,
+  "tasks": null,
+  "inputGroups": null,
+  "incompatibleApps": null,
+  "platformRequirements": null,
+  "supportedDeployments": [
+    "_standalone",
+    "_distributed",
+    "_search_head_clustering"
+  ],
+  "targetWorkloads": [
+    "_search_heads",
+    "_indexers",
+    "_forwarders"
+  ]
+}

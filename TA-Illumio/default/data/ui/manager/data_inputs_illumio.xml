@@ -1,0 +1,141 @@
+<endpoint name="data/inputs/illumio">
+  <header>Illumio Data Inputs</header>
+  <breadcrumb>
+    <parent hidecurrent="False">datainputstats</parent>
+    <name i18ntag="">Illumio</name>
+  </breadcrumb>
+  <elements>
+    <element name="name" label="Name">
+      <view name="list"/>
+      <view name="create"/>
+    </element>
+    <element name="pce_url" label="Supercluster Leader / PCE URL">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+    </element>
+    <element name="api_key_id" label="API Authentication Username"> 
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">e.g. 'api_1234567890'</key>
+    </element>
+    <element name="api_secret" type="password" label="API Secret">      
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">
+        <![CDATA[ <script type="text/javascript">
+            $(function() { $('label[for*="api_secret_id_confirm"]').html("Confirm API Secret")
+            });
+          </script> ]]>
+      </key>
+    </element>
+    <element name="port_number" label="Port Number for syslogs (TCP)">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514</key>
+    </element>
+    <element name="time_interval_port" label="Port Scan configuration: scan interval in seconds">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Interval during which the Port Scan Threshold is exceeded</key>
+    </element>
+    <element name="cnt_port_scan" label="Port Scan Configuration: Unique ports threshold">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Minimum number of ports scanned by a port-scan</key>
+    </element>
+    <element name="qurantine_label" label="Labels to quarantine workloads">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Comma Separated list of three labels of type app, environment and location. </key>
+    </element>
+    <element name="org_id" label="Organization ID">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">This Org-ID will be used for making REST API calls to PCE.</key>
+    </element>
+    <element name="hostname" label="Hostname of PCE Nodes">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Comma Separated Hostnames of all the nodes managed by this PCE instance.</key>
+    </element>
+    <element name="enable_data_collection" type="select" label="Data Collection">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="dynamicOptions" type="dict"></key>
+      <options>
+        <opt value="Enabled" label="Enabled"/>
+        <opt value="Disabled" label="Disabled"/>
+      </options>
+    </element>
+    <element name="spl-ctrl_EnableAdvanced" type="checkbox" label="More settings" class="spl-mgr-advanced-switch">
+      <view name="edit"/>
+      <view name="create"/>
+      <onChange>
+        <key name="_action">showonly</key>
+        <key name="0">NONE</key>
+        <key name="1">ALL</key>
+        <group_set>
+          <group name="advanced"/>
+        </group_set>
+      </onChange>
+    </element>
+    <element name="advanced" type="fieldset" class="spl-mgr-advanced-options">
+      <view name="edit"/>
+      <view name="create"/>
+      <elements>
+        <element name="intervalFields" type="fieldset">
+          <key name="legend"> </key>
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <elements>
+            <element name="interval" type="textfield" label="Interval">
+              <view name="edit"/>
+              <view name="create"/>
+              <key name="exampleText">Period between making API calls</key>
+            </element>
+          </elements>
+        </element>
+        <element name="host" type="textfield" label="Host">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Set the host with this value.</key>
+        </element>
+        <element name="index" type="select" label="Index">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Set the destination index for this source.</key>
+          <key name="dynamicOptions" type="dict">
+            <key name="keyName">title</key>
+            <key name="keyValue">title</key>
+            <key name="splunkSource">/data/indexes</key>
+            <key name="splunkSourceParams" type="dict">
+              <key name="search">'isInternal=false disabled=false'</key>
+              <key name="count">-1</key>
+            </key>
+          </key>
+        </element>
+        <element name="self_signed_cert_path" label="Custom (self-signed) certificate path">      
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Path for the custom root certificate</key>
+        </element>
+        <element name="allowed_ip" label="Allowed port scanner Source IP addresses">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Comma Separated list of Source IPs, which will be ignored in Port scans</key>
+        </element>
+      </elements>
+    </element>
+  </elements>
+</endpoint>

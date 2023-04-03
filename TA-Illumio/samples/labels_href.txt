@@ -1,0 +1,9 @@
+/orgs/1/labels/1
+/orgs/1/labels/2
+/orgs/1/labels/3
+/orgs/1/labels/4
+/orgs/1/labels/5
+/orgs/1/labels/6
+/orgs/1/labels/7
+/orgs/1/labels/8
+/orgs/1/labels/9

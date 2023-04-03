@@ -1,0 +1,10 @@
+[run]
+omit =
+	*/tests/*
+	*/site-packages/*
+	TA-Illumio/bin/lib/**
+	TA-Illumio/bin/splunklib/**
+	TA-Illumio/bin/IllumioUtil.py
+	
+[report]
+fail_under = 70

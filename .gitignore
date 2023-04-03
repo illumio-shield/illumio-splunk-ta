@@ -1,0 +1,27 @@
+# Python cache
+**/*.pyc
+**/__pycache__/
+
+# Pyenv config
+.python-version
+
+# Virtual envs
+env/
+venv/
+
+# Test coverage
+.coverage
+.pytest_cache
+
+# Local configs
+local/
+**/metadata/local.meta
+
+# Vscode settings
+.vscode/
+
+# Logs
+logs/
+
+# Dynamically generated pickle files
+*.pickle

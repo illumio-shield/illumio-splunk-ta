@@ -1,0 +1,9 @@
+ubuntu
+unix
+rhel
+ubuntu-x86_64-precise
+ubuntu-x86_64-xenial
+centos-x86_64-7.0
+CentOS
+os-1
+os-2

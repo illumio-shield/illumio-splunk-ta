@@ -1,0 +1,5 @@
+[flake8]
+max-line-length=120
+exclude=default,local,metadata,README,static,*.txt,*.manifest,tests,.cache,.venv,.git,__pycache__,lib,splunklib
+ignore=D104,D100,D203,D213,W503,F821,E402
+per-file-ignores=tests/test_*:E402
