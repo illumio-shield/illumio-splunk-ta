@@ -13,7 +13,7 @@ time_interval_port = <value>
 
 self_signed_cert_path = <value>
 
-qurantine_label = <value>
+quarantine_label = <value>
 
 enable_data_collection = <value>
 

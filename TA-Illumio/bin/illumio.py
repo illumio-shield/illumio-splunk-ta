@@ -128,12 +128,12 @@ class Illumio(Script):
         enable_data_collection_arg.data_type = Argument.data_type_boolean
         scheme.add_argument(enable_data_collection_arg)
 
-        qurantine_label_arg = Argument("quarantine_labels")
-        qurantine_label_arg.title = "Quarantine Labels"
-        qurantine_label_arg.description = "Comma Separated list of label names to define workload quarantine"
-        qurantine_label_arg.required_on_create = False
-        qurantine_label_arg.required_on_edit = False
-        scheme.add_argument(qurantine_label_arg)
+        quarantine_label_arg = Argument("quarantine_labels")
+        quarantine_label_arg.title = "Quarantine Labels"
+        quarantine_label_arg.description = "Comma Separated list of label names to define workload quarantine"
+        quarantine_label_arg.required_on_create = False
+        quarantine_label_arg.required_on_edit = False
+        scheme.add_argument(quarantine_label_arg)
 
         return scheme
 
