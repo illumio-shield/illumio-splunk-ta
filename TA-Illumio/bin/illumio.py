@@ -9,9 +9,7 @@ Copyright:
 License:
     Apache2, see LICENSE for more details.
 """
-from __future__ import print_function
-from __future__ import absolute_import
-
+import os
 import sys
 import xml.dom.minidom
 import xml.sax.saxutils
@@ -19,60 +17,41 @@ import json
 import base64
 import re
 from threading import Thread
-import splunk.search as splunk_search
-from splunk.clilib import cli_common as cli
 
 import requests
+
 import splunk.rest
+import splunk.search as splunk_search
 import splunk.version as ver
+from splunk.clilib import cli_common as cli
+
+from splunklib.modularinput import Script, Scheme, Argument, EventWriter, Event
+
 
 version = float(re.search(r"(\d+.\d+)", ver.__version__).group(1))
 
-try:
-    if version >= 6.4:
-        from splunk.clilib.bundle_paths import make_splunkhome_path
-    else:
-        from splunk.appserver.mrsparkle.lib.util import make_splunkhome_path
-except ImportError:
-    sys.exit(3)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 
-sys.path.append(make_splunkhome_path(["etc", "apps", "TA-Illumio", "bin", "lib"]))
-from future import standard_library
-from builtins import str
-from builtins import object
-standard_library.install_aliases()
 import urllib.request
 import urllib.parse
 import urllib.error
-from IllumioUtil import get_logger, writeconf
-from IllumioUtil import store_password
-from IllumioUtil import get_credentials
-from IllumioUtil import app_name
-from IllumioUtil import resource
-from IllumioUtil import check_label_exists
-from IllumioUtil import is_ip
-from IllumioUtil import is_hostname
-from get_data import get_label, get_workload, print_xml_stream, get_pce_health, get_ip_lists, get_services
 
-logger = get_logger("Illumio_MODINPUT")
+SCHEME = r"""<scheme>
+    <title>Illumio</title>
+    <description>Enable data inputs for splunk add-on for Illumio</description>
+    <use_external_validation>true</use_external_validation>
+    <streaming_mode>xml</streaming_mode>
+
+    <endpoint>
+        <args>
+        </args>
+    </endpoint>
+</scheme>
+"""     # noqa: E501
 
 
-class Illumio(object):
+class Illumio(Script):
     """Illumio Modular Input."""
-
-    session_key = ""
-    mod_input_name = ""
-    api_secret = ""
-    api_key = ""
-    stanza_name = ""
-    pce_url = ""
-    cert_path = ""
-    enable_data_collection = 0
-    qurantine_label = ""
-    flag = {"enabled": 1, "disabled": 0, "1": 1, "0": 0}
-    config = {}
-    hostname = ""
-    org_id = 1
 
     def __init__(self):
         """Initialize environment."""
@@ -106,6 +85,170 @@ class Illumio(object):
             self.config["api_key_id"] = get_credentials(self.mod_input_name + "_key", self.session_key)
             self.api_secret = self.config["api_secret"][1]
             self.api_key = self.config["api_key_id"][1]
+
+    def get_scheme(self):
+        scheme = Scheme("Illumio")
+        scheme.description = "Enable data inputs for splunk add-on for Illumio"
+        scheme.use_external_validation = True
+        scheme.streaming_mode_xml = True
+
+        name_arg = Argument("name")
+        name_arg.title = "Name"
+        name_arg.required_on_create = True
+        name_arg.required_on_edit = True
+        scheme.add_argument(name_arg)
+
+        pce_url_arg = Argument("pce_url")
+        pce_url_arg.title = "Supercluster Leader / PCE URL"
+        pce_url_arg.required_on_create = True
+        pce_url_arg.required_on_edit = True
+        pce_url_arg.validation = "validate(match(pce_url, '^(https://)\S+'), 'PCE URL: PCE URL must begin with ''https://''')"
+        scheme.add_argument(pce_url_arg)
+
+        org_id_arg = Argument("org_id")
+        org_id_arg.title = "Organization ID"
+        org_id_arg.description = "Organization ID"
+        org_id_arg.required_on_create = False
+        org_id_arg.required_on_edit = False
+        scheme.add_argument(org_id_arg)
+
+        api_key_id_arg = Argument("api_key_id")
+        api_key_id_arg.title = "API Authentication Username"
+        api_key_id_arg.description = "Illumio API key username. e.g. 'api_1234567890'"
+        api_key_id_arg.required_on_create = True
+        api_key_id_arg.required_on_edit = True
+        scheme.add_argument(api_key_id_arg)
+
+        api_secret_arg = Argument("api_secret")
+        api_secret_arg.title = "API Authentication Secret"
+        api_secret_arg.description = "Illumio API key secret"
+        api_secret_arg.required_on_create = True
+        api_secret_arg.required_on_edit = True
+        api_secret_arg.data_type = Argument.data_type_password
+        scheme.add_argument(api_secret_arg)
+
+        port_number_arg = Argument("port_number")
+        port_number_arg.title = "Port Number for syslogs (TCP)"
+        port_number_arg.description = "Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514"
+        port_number_arg.required_on_create = False
+        port_number_arg.required_on_edit = False
+
+        time_interval_port_arg = Argument("time_interval_port")
+        time_interval_port_arg.title = "Port Scan configuration: scan interval in seconds"
+        time_interval_port_arg.description = "Interval during which the Port Scan Threshold is exceeded"
+        time_interval_port_arg.required_on_create = False
+        time_interval_port_arg.required_on_edit = False
+        time_interval_port_arg.validation = "validate(is_nonneg_int(time_interval_port), 'Time interval for syslog port scan: Time Interval must be non negative integer.')"
+        scheme.add_argument(time_interval_port_arg)
+
+        cnt_port_scan_arg = Argument("cnt_port_scan")
+        cnt_port_scan_arg.title = "Port Scan Configuration: Unique ports threshold"
+        cnt_port_scan_arg.description = "Minimum number of ports scanned by a port-scan"
+        cnt_port_scan_arg.required_on_create = False
+        cnt_port_scan_arg.required_on_edit = False
+        cnt_port_scan_arg.validation = "validate(is_nonneg_int(cnt_port_scan), 'Count for port scan: must be non negative integer.')"
+        scheme.add_argument(cnt_port_scan_arg)
+
+        allowed_ip_arg = Argument("allowed_ips")
+        allowed_ip_arg.title = "Allowed IPs"
+        allowed_ip_arg.description = "Comma-separated list of Source IPs to be ignored in port scans"
+        allowed_ip_arg.required_on_create = False
+        allowed_ip_arg.required_on_edit = False
+        scheme.add_argument(allowed_ip_arg)
+
+        self_signed_cert_path_arg = Argument("self_signed_cert_path")
+        self_signed_cert_path_arg.title = "Self Signed Certificate Path"
+        self_signed_cert_path_arg.description = "Path for the custom root certificate. e.g. '/opt/splunk/etc/apps/TA-Illumio/bin/cert.pem'"
+        self_signed_cert_path_arg.required_on_create = False
+        self_signed_cert_path_arg.required_on_edit = False
+        scheme.add_argument(self_signed_cert_path_arg)
+
+        enable_data_collection_arg = Argument("enable_data_collection")
+        enable_data_collection_arg.title = "Enable Data Collection"
+        enable_data_collection_arg.description = "Enable data collection for Illumio"
+        enable_data_collection_arg.required_on_create = False
+        enable_data_collection_arg.required_on_edit = False
+        enable_data_collection_arg.data_type = Argument.data_type_boolean
+        scheme.add_argument(enable_data_collection_arg)
+
+        qurantine_label_arg = Argument("quarantine_labels")
+        qurantine_label_arg.title = "Quarantine Labels"
+        qurantine_label_arg.description = "Comma Separated list of label names to define workload quarantine"
+        qurantine_label_arg.required_on_create = False
+        qurantine_label_arg.required_on_edit = False
+        scheme.add_argument(qurantine_label_arg)
+
+        return scheme
+
+    def validate_input(self, validation_definition):
+        """
+        Validate different input arguments of Modular Input page.
+
+        If the value is invalid, appropriate message is displayed on screen.
+        """
+        session_key = validation_definition.parameters["session_key"]
+        pce_url = validation_definition.parameters["pce_url"]
+        org_id = int(validation_definition.parameters["org_id"])
+        api_key_id = validation_definition.parameters["api_key_id"]
+        api_secret = validation_definition.parameters["api_secret"]
+        port_number = validation_definition.parameters["port_number"]
+        mod_input_name = validation_definition.parameters["stanza"]
+        cert_path = validation_definition.parameters["self_signed_cert_path"]
+        time_interval_port = validation_definition.parameters["time_interval_port"]
+        cnt_port_scan = validation_definition.parameters["cnt_port_scan"]
+        interval = validation_definition.parameters["interval"]
+        qurantine_label = validation_definition.parameters["quarantine_labels"]
+        allowed_ip = validation_definition.parameters["allowed_ips"]
+
+        syslog_protocol = "tcp"
+        stanza = syslog_protocol + "://" + str(port_number)
+
+        if api_key_id and api_secret:
+
+            validate_pce_url(pce_url, session_key)
+            validate_port_number(port_number, session_key)
+            validate_time_interval_port(time_interval_port, session_key)
+            validate_cnt_port_scan(cnt_port_scan, session_key)
+            validate_org_id(org_id, session_key)
+            validate_interval(interval, session_key)
+            validate_allowed_ip(allowed_ip, session_key)
+
+            validate_connection(pce_url, api_key_id, api_secret, cert_path, session_key)
+
+            if port_number != "":
+                port_status = syslog_port_status(syslog_protocol, port_number, mod_input_name, session_key)
+
+                validate_port_status(port_status, syslog_protocol, port_number, session_key)
+
+                if port_status == 0:
+                    inputdata = {"index": [validation_definition.get("index", "")],
+                                "sourcetype": ["illumio:pce"],
+                                "source": ["syslog-" + mod_input_name],
+                                "disabled": ["false"],
+                                "name": stanza}
+
+                    try:
+                        splunk.rest.simpleRequest(
+                            "/servicesNS/nobody/" + app_name + "/configs/conf-inputs",
+                            session_key, postargs=inputdata, method='POST', raiseAllErrors=True)
+                    except Exception:
+                        logger.exception("Unable to create input")
+                        raise Exception
+
+                    try:
+                        splunk.rest.simpleRequest(
+                            "/admin/raw/_reload",
+                            session_key, method='POST', raiseAllErrors=True)
+                    except Exception:
+                        logger.exception("Unable to reload TCP endpoint")
+
+            validate_qurantine_label(qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key)
+
+    def stream_events(self, inputs, ew):
+        # Splunk Enterprise calls the modular input,
+        # streams XML describing the inputs to stdin,
+        # and waits for XML on stdout describing events.
+        pass
 
     @staticmethod
     def get_mod_input_configs():
@@ -221,115 +364,6 @@ class Illumio(object):
             }
         res = json.dumps(res)
         print_xml_stream(res)
-
-
-SCHEME = r"""<scheme>
-    <title>Illumio</title>
-    <description>Enable data inputs for splunk add-on for Illumio</description>
-    <use_external_validation>true</use_external_validation>
-    <streaming_mode>xml</streaming_mode>
-
-    <endpoint>
-        <args>
-            <arg name="name">
-                <title>Name</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="pce_url">
-                <title>Supercluster Leader / PCE URL</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(match(pce_url, '^(https://)\S+'), "PCE URL: PCE URL must begin with 'https://'")
-                </validation>
-            </arg>
-            <arg name="api_key_id">
-                <title>API Authentication Username</title>
-                <description>e.g. 'api_1234567890'</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="api_secret">
-                <title>API Secret</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="port_number">
-                <title>Port Number for syslogs (TCP)</title>
-                <description>Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="time_interval_port">
-                <title>Port Scan configuration: scan interval in seconds</title>
-                <description>Interval during which the Port Scan Threshold is exceeded</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(time_interval_port), "Time interval for syslog port scan: Time Interval must be non negative integer.")
-                </validation>
-            </arg>
-            <arg name="cnt_port_scan">
-                <title>Port Scan Configuration: Unique ports threshold</title>
-                <description>Minimum number of ports scanned by a port-scan</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(cnt_port_scan), "Count for port scan: must be non negative integer.")
-                </validation>
-            </arg>
-            <arg name="self_signed_cert_path">
-                <title>Certificate Path</title>
-                <description>Path for the custom root certificate</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="qurantine_label">
-                <title>Labels to quarantine workloads</title>
-                <description>Comma Separated list of three labels of type app, location and environment.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-                <validation>
-                    validate(match(qurantine_label, '(\S+,\S+,\S+)'), "Enter three labels of type app, env and loc")
-                </validation>
-            </arg>
-            <arg name="allowed_ip">
-                <title>Comma Separated list of Source IPs, which will be ignored in Port scans</title>
-                <description>Port scans from these Source IPs are ignored</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="private_ip">
-                <title>(This field is removed from UI but keeping it here to avoid error logs on upgrade) Private IP address of Illumio Nodes</title>
-                <description>Comma Separated IP address of all the nodes managed by this PCE instance.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="hostname">
-                <title>Hostnames of Illumio Nodes</title>
-                <description>Comma Separated Hostnames of all the nodes managed by this PCE instance.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="enable_data_collection">
-                <title>Data Collection</title>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="org_id">
-                <title>Organization ID</title>
-                <description>This Org-ID will be used for making REST API calls to PCE.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(org_id), "Organization ID: Must be non-negative integer.")
-                </validation>
-            </arg>
-        </args>
-    </endpoint>
-</scheme>
-"""     # noqa: E501
 
 
 def do_scheme():
@@ -588,75 +622,6 @@ def validate_allowed_ip(allowed_ip, session_key):
             logger.exception("Error in Validating Allowed port scanner Source IP addresses")
 
 
-def validate_arguments():
-    """
-    Validate different input arguments of Modular Input page.
-
-    If the value is invalid, appropriate message is displayed on screen.
-    """
-    val_data = get_validation_data()
-
-    api_key_id = val_data.get("api_key_id", "")
-    api_secret = val_data.get("api_secret", "")
-    pce_url = val_data.get("pce_url", "")
-    session_key = val_data.get("session_key", "")
-    protocol = val_data.get("protocol", "").lower()
-    port_number = val_data.get("port_number", "")
-    mod_input_name = val_data.get("stanza", "")
-    cert_path = val_data.get("self_signed_cert_path", "")
-    time_interval_port = val_data.get("time_interval_port", "")
-    cnt_port_scan = val_data.get("cnt_port_scan", "")
-    interval = val_data.get("interval", "")
-    qurantine_label = val_data.get("qurantine_label", "")
-    hostname = val_data.get("hostname", "")
-    org_id = int(val_data.get("org_id", 1))
-    allowed_ip = val_data.get("allowed_ip", "")
-
-    stanza = protocol + "://" + str(port_number)
-
-    if api_key_id and api_secret:
-
-        validate_pce_url(pce_url, session_key)
-        validate_port_number(port_number, session_key)
-        validate_time_interval_port(time_interval_port, session_key)
-        validate_cnt_port_scan(cnt_port_scan, session_key)
-        validate_org_id(org_id, session_key)
-        validate_interval(interval, session_key)
-        validate_allowed_ip(allowed_ip, session_key)
-
-        validate_connection(pce_url, api_key_id, api_secret, cert_path, session_key)
-
-        if port_number != "":
-            port_status = syslog_port_status(protocol, port_number, mod_input_name, session_key)
-
-            validate_port_status(port_status, protocol, port_number, session_key)
-
-            if port_status == 0:
-                inputdata = {"index": [val_data.get("index", "")],
-                             "sourcetype": ["illumio:pce"],
-                             "source": ["syslog-" + mod_input_name],
-                             "disabled": ["false"],
-                             "name": stanza}
-
-                try:
-                    splunk.rest.simpleRequest(
-                        "/servicesNS/nobody/" + app_name + "/configs/conf-inputs",
-                        session_key, postargs=inputdata, method='POST', raiseAllErrors=True)
-                except Exception:
-                    logger.exception("Unable to create input")
-                    raise Exception
-
-                try:
-                    splunk.rest.simpleRequest(
-                        "/admin/raw/_reload",
-                        session_key, method='POST', raiseAllErrors=True)
-                except Exception:
-                    logger.exception("Unable to reload TCP endpoint")
-
-        validate_qurantine_label(qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key)
-        validate_hostname(hostname, pce_url, session_key)
-
-
 def run_script():
     """Run script."""
     illumio = Illumio()
@@ -708,12 +673,4 @@ def run_script():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--scheme":
-            do_scheme()
-        elif sys.argv[1] == "--validate-arguments":
-            validate_arguments()
-    else:
-        run_script()
-
-    sys.exit(0)
+    sys.exit(Illumio().run(sys.argv))

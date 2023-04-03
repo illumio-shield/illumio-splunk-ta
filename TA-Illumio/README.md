@@ -3,9 +3,8 @@
 * The Illumio Add-on for Splunk integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields and enables Illumio data to be easily used with Splunk Enterprise Security, Splunk App for PCI Compliance, etc.
 * For dashboards with Illumio data, please install the Illumio App for Splunk available at https://splunkbase.splunk.com
 * Version: 3.2.2
-* Supported Splunk versions are 8.1.x and 8.2.x
-* Supported PCE Versions are 17.1, 17.2, 17.3, 18.1, 18.2.0*, 18.2.x, 18.3, 19.1, 19.3, 18.2.0*, 18.2.x, 18.3, 19.1, 19.3, 18.2.0*, 18.2.x, 18.3, 19.1, 19.3, 20.1 and 21.2.x.
-* Supported SaaS PCE Version is 21.5.3-3.
+* Supported Splunk versions: 8.x and 9.0
+* Supported PCE Versions: 21.2, 21.5, 22.2, 22.5 as well as the current PCE SaaS version (22.5)
 
 
 # Release Notes
