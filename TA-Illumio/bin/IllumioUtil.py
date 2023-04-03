@@ -1,9 +1,12 @@
-from future import standard_library
-standard_library.install_aliases()
+# -*- coding: utf-8 -*-
 
-from builtins import str
-from logging.handlers import RotatingFileHandler
+"""This module provides helper utilities for the Illumio TA.
 
+Copyright:
+    © 2023 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
 import logging
 import os
 import urllib.request

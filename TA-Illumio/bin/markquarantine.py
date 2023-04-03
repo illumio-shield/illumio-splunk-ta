@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+
+"""This module provides a ModularAction for quarantining workloads in the PCE.
+
+Copyright:
+    © 2023 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
 from __future__ import absolute_import
 
 import sys

@@ -1,3 +1,14 @@
+# -*- coding: utf-8 -*-
+
+"""This module provides the modular input for the Illumio TA.
+
+The input accesses the Illumio API and retrieves data from the PCE.
+
+Copyright:
+    © 2023 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
 from __future__ import print_function
 from __future__ import absolute_import
 

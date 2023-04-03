@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+
+"""This module is used to test connectivity to the Illumio PCE.
+
+Copyright:
+    © 2023 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
 from __future__ import print_function
 from builtins import input
 import requests
