@@ -20,10 +20,3 @@ enable_data_collection = <value>
 allowed_ip = <value>
 
 org_id = <value>
-
-private_ip = <value> (Removed feature of private_ip option. Keeping it here to avoid error logs on upgrade)
-
-hostname = <value>
-
-[illumio]
-python.version = Select which Python version to use. {default|python|python2|python3}
