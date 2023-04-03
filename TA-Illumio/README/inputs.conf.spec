@@ -13,10 +13,10 @@ time_interval_port = <value>
 
 self_signed_cert_path = <value>
 
-quarantine_label = <value>
+quarantine_labels = <value>
 
 enable_data_collection = <value>
 
-allowed_ip = <value>
+allowed_ips = <value>
 
 org_id = <value>

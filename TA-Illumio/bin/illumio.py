@@ -106,12 +106,12 @@ class Illumio(Script):
         cnt_port_scan_arg.data_type = Argument.data_type_number
         scheme.add_argument(cnt_port_scan_arg)
 
-        allowed_ip_arg = Argument("allowed_ips")
-        allowed_ip_arg.title = "Allowed IPs"
-        allowed_ip_arg.description = "Comma-separated list of Source IPs to be ignored in port scans"
-        allowed_ip_arg.required_on_create = False
-        allowed_ip_arg.required_on_edit = False
-        scheme.add_argument(allowed_ip_arg)
+        allowed_ips_arg = Argument("allowed_ipss")
+        allowed_ips_arg.title = "Allowed IPs"
+        allowed_ips_arg.description = "Comma-separated list of Source IPs to be ignored in port scans"
+        allowed_ips_arg.required_on_create = False
+        allowed_ips_arg.required_on_edit = False
+        scheme.add_argument(allowed_ips_arg)
 
         self_signed_cert_path_arg = Argument("self_signed_cert_path")
         self_signed_cert_path_arg.title = "Self Signed Certificate Path"
@@ -128,12 +128,12 @@ class Illumio(Script):
         enable_data_collection_arg.data_type = Argument.data_type_boolean
         scheme.add_argument(enable_data_collection_arg)
 
-        quarantine_label_arg = Argument("quarantine_labels")
-        quarantine_label_arg.title = "Quarantine Labels"
-        quarantine_label_arg.description = "Comma Separated list of label names to define workload quarantine"
-        quarantine_label_arg.required_on_create = False
-        quarantine_label_arg.required_on_edit = False
-        scheme.add_argument(quarantine_label_arg)
+        quarantine_labels_arg = Argument("quarantine_labelss")
+        quarantine_labels_arg.title = "Quarantine Labels"
+        quarantine_labels_arg.description = "Comma Separated list of label names to define workload quarantine"
+        quarantine_labels_arg.required_on_create = False
+        quarantine_labels_arg.required_on_edit = False
+        scheme.add_argument(quarantine_labels_arg)
 
         return scheme
 
@@ -159,7 +159,7 @@ class Illumio(Script):
         cert_path = definition.parameters["self_signed_cert_path"]
         time_interval_port = definition.parameters["time_interval_port"]
         cnt_port_scan = definition.parameters["cnt_port_scan"]
-        allowed_ip = definition.parameters["allowed_ips"]
+        allowed_ips = definition.parameters["allowed_ipss"]
 
         parsed = urlparse(pce_url)
         pce_port = parsed.port or 443
@@ -201,13 +201,13 @@ class Illumio(Script):
 
         # TODO: test interval validation
 
-        if allowed_ip:
+        if allowed_ips:
             import ipaddress
-            for ip in allowed_ip.split(","):
+            for ip in allowed_ips.split(","):
                 ipaddress.ip_address(ip.strip())
 
         # TODO: reimplement quarantine label validation for MT4L
-        # quarantine_labels = definition.parameters["quarantine_labels"]
+        # quarantine_labelss = definition.parameters["quarantine_labelss"]
 
     def stream_events(self, inputs, ew):
         # Splunk Enterprise calls the modular input,
@@ -257,15 +257,15 @@ class Illumio(Script):
         pce_url = self.pce_url
         port_scan = self.config.get("cnt_port_scan", "")
         interval = self.config.get("time_interval_port", "")
-        allowed_ip = self.config.get("allowed_ip", "")
+        allowed_ips = self.config.get("allowed_ips", "")
         res = {
             "pce_url": pce_url,
             "port_scan": port_scan,
             "interval": interval,
             "illumio_type": "illumio:pce:ps_details",
         }
-        if allowed_ip:
-            res["allowed_ip"] = allowed_ip
+        if allowed_ips:
+            res["allowed_ips"] = allowed_ips
         res = json.dumps(res)
         print_xml_stream(res)
 

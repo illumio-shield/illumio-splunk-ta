@@ -47,7 +47,7 @@
       <view name="create"/>
       <key name="exampleText">Minimum number of ports scanned by a port-scan</key>
     </element>
-    <element name="quarantine_label" label="Labels to quarantine workloads">
+    <element name="quarantine_labels" label="Labels to quarantine workloads">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
@@ -129,7 +129,7 @@
           <view name="create"/>
           <key name="exampleText">Path for the custom root certificate</key>
         </element>
-        <element name="allowed_ip" label="Allowed port scanner Source IP addresses">
+        <element name="allowed_ips" label="Allowed port scanner Source IP addresses">
           <view name="list"/>
           <view name="edit"/>
           <view name="create"/>
