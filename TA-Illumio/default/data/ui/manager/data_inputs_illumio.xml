@@ -14,10 +14,16 @@
       <view name="edit"/>
       <view name="create"/>
     </element>
+    <element name="org_id" label="Organization ID">
+      <view name="list"/>
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">PCE Organization ID. Defaults to 1.</key>
+    </element>
     <element name="api_key_id" label="API Authentication Username">
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">e.g. 'api_1234567890'</key>
+      <key name="exampleText">Illumio API key username. e.g. 'api_1234567890'</key>
     </element>
     <element name="api_secret" type="password" label="API Secret">
       <view name="edit"/>
@@ -51,19 +57,13 @@
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Comma Separated list of three labels of type app, environment and location. </key>
+      <key name="exampleText">Comma-separated list of three labels of type app, environment and location. </key>
     </element>
-    <element name="org_id" label="Organization ID">
+    <element name="hostname" label="Hostnames of PCE Nodes">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">This Org-ID will be used for making REST API calls to PCE.</key>
-    </element>
-    <element name="hostname" label="Hostname of PCE Nodes">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Comma Separated Hostnames of all the nodes managed by this PCE instance.</key>
+      <key name="exampleText">Comma-separated hostnames of all the nodes managed by this PCE instance.</key>
     </element>
     <element name="enable_data_collection" type="select" label="Data Collection">
       <view name="list"/>
@@ -128,6 +128,16 @@
           <view name="edit"/>
           <view name="create"/>
           <key name="exampleText">Path for the custom root certificate</key>
+        </element>
+        <element name="http_proxy" label="HTTP Proxy">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Optional HTTP proxy address</key>
+        </element>
+        <element name="https_proxy" label="HTTPS Proxy">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Optional HTTPS proxy address</key>
         </element>
         <element name="allowed_ips" label="Allowed port scanner Source IP addresses">
           <view name="list"/>
