@@ -9,10 +9,11 @@
       <view name="list"/>
       <view name="create"/>
     </element>
-    <element name="pce_url" label="Supercluster Leader / PCE URL">
+    <element name="pce_url" label="PCE URL">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
+      <key name="exampleText">Full URL of the PCE (or Supercluster leader) to connect to, including port. Example value: https://my.pce.com:8443</key>
     </element>
     <element name="org_id" label="Organization ID">
       <view name="list"/>
@@ -20,52 +21,41 @@
       <view name="create"/>
       <key name="exampleText">PCE Organization ID. Defaults to 1.</key>
     </element>
-    <element name="api_key_storage" type="illumio_api_secret_storage" label="API Authentication Username">
+    <element name="api_key_storage" type="illumio_api_secret_storage" label="API Authentication Credentials">
       <view name="edit"/>
       <view name="create"/>
       <key name="prefix">illumio://</key>
-      <key name="keyExampleText">Illumio API key username. e.g. 'api_1234567890'</key>
-      <key name="secretExampleText">Illumio API key secret</key>
+      <key name="keyExampleText">Illumio API key username. Example value: 'api_145a5c788e63c30a3'</key>
     </element>
     <element name="port_number" label="Port Number for syslogs (TCP)">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514</key>
+      <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
     </element>
-    <element name="time_interval_port" label="Port Scan configuration: scan interval in seconds">
+    <element name="time_interval_port" label="Port Scan Interval">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Interval during which the Port Scan Threshold is exceeded</key>
+      <key name="exampleText">A port scan alert will be triggered if the scan threshold count is met during this interval (in seconds)</key>
     </element>
-    <element name="cnt_port_scan" label="Port Scan Configuration: Unique ports threshold">
+    <element name="cnt_port_scan" label="Port Scan Threshold">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Minimum number of ports scanned by a port-scan</key>
+      <key name="exampleText">Number of scanned ports that triggers a port scan alert</key>
     </element>
-    <element name="quarantine_labels" label="Labels to quarantine workloads">
+    <element name="quarantine_labels" label="Quarantine Label Dimensions">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Comma-separated list of three labels of type app, environment and location. </key>
+      <key name="exampleText">Comma-separated list of label names to define workload quarantine</key>
     </element>
-    <element name="hostname" label="Hostnames of PCE Nodes">
+    <element name="enable_data_collection" type="checkbox" label="Enable Input">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Comma-separated hostnames of all the nodes managed by this PCE instance.</key>
-    </element>
-    <element name="enable_data_collection" type="select" label="Data Collection">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="dynamicOptions" type="dict"></key>
-      <options>
-        <opt value="Enabled" label="Enabled"/>
-        <opt value="Disabled" label="Disabled"/>
-      </options>
+      <key name="exampleText">Enable data collection for this input</key>
     </element>
     <element name="spl-ctrl_EnableAdvanced" type="checkbox" label="More settings" class="spl-mgr-advanced-switch">
       <view name="edit"/>
@@ -99,13 +89,13 @@
         <element name="host" type="textfield" label="Host">
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Set the host with this value.</key>
+          <key name="exampleText">Set the host with this value</key>
         </element>
         <element name="index" type="select" label="Index">
           <view name="list"/>
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Set the destination index for this source.</key>
+          <key name="exampleText">Set the destination index for this source</key>
           <key name="dynamicOptions" type="dict">
             <key name="keyName">title</key>
             <key name="keyValue">title</key>
@@ -116,10 +106,10 @@
             </key>
           </key>
         </element>
-        <element name="self_signed_cert_path" label="Custom (self-signed) certificate path">
+        <element name="self_signed_cert_path" label="Custom (self-signed) Certificate Path">
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Path for the custom root certificate</key>
+          <key name="exampleText">Optional path for a custom root certificate, e.g. '$SPLUNK_HOME/etc/apps/TA-Illumio/bin/cert.pem'</key>
         </element>
         <element name="http_proxy" label="HTTP Proxy">
           <view name="edit"/>
@@ -131,11 +121,11 @@
           <view name="create"/>
           <key name="exampleText">Optional HTTPS proxy address</key>
         </element>
-        <element name="allowed_ips" label="Allowed port scanner Source IP addresses">
+        <element name="allowed_ips" label="Allowed Port Scan IPs">
           <view name="list"/>
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Comma Separated list of Source IPs, which will be ignored in Port scans</key>
+          <key name="exampleText">Comma-separated list of device IPs to be ignored by port scan alerts</key>
         </element>
       </elements>
     </element>
