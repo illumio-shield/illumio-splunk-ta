@@ -20,20 +20,12 @@
       <view name="create"/>
       <key name="exampleText">PCE Organization ID. Defaults to 1.</key>
     </element>
-    <element name="api_key_id" label="API Authentication Username">
+    <element name="api_key_storage" type="illumio_api_secret_storage" label="API Authentication Username">
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Illumio API key username. e.g. 'api_1234567890'</key>
-    </element>
-    <element name="api_secret" type="password" label="API Secret">
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">
-        <![CDATA[ <script type="text/javascript">
-            $(function() { $('label[for*="api_secret_id_confirm"]').html("Confirm API Secret")
-            });
-          </script> ]]>
-      </key>
+      <key name="prefix">illumio://</key>
+      <key name="keyExampleText">Illumio API key username. e.g. 'api_1234567890'</key>
+      <key name="secretExampleText">Illumio API key secret</key>
     </element>
     <element name="port_number" label="Port Number for syslogs (TCP)">
       <view name="list"/>

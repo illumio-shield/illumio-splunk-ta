@@ -3,8 +3,6 @@ pce_url = <value>
 
 api_key_id = <value>
 
-api_secret = <value>
-
 org_id = <value>
 
 port_number = <value>
