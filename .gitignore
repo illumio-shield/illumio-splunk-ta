@@ -1,27 +1,31 @@
-# Python cache
+# python cache
 **/*.pyc
 **/__pycache__/
 
-# Pyenv config
+# pyenv config
 .python-version
 
-# Virtual envs
+# virtual envs
 env/
 venv/
 
-# Test coverage
+# pytest
 .coverage
 .pytest_cache
 
-# Local configs
-local/
-**/metadata/local.meta
+# macos
+.DS_Store
 
-# Vscode settings
+# vscode settings
 .vscode/
 
-# Logs
+# local files
+local/
+**/metadata/local.meta
 logs/
 
-# Dynamically generated pickle files
-*.pickle
+# build files
+dist/
+build/
+**/*.tar.gz
+**/*.tgz
