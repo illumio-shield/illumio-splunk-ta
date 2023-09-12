@@ -3,7 +3,9 @@
 * The name must be unique.
 
 pce_url = <value>
-* The full URL of the Illumio PCE to connect to.
+* The full URL of the Illumio PCE to connect to. If a scheme is not provided,
+  https:// is used by default. If a port is not provided, it is assumed to be
+  the default for the given scheme (80 for HTTP, 443 for HTTPS).
 * Example value: https://my.pce.com:8443
 
 api_key_id = <value>
@@ -20,14 +22,15 @@ port_number = <value>
   used for direct push from the PCE; syslogs pulled from AWS S3 must be
   configured separately.
 
-cnt_port_scan = <value>
-* Along with time_interval_port, defines a threshold that will trigger an alert
-  when more than cnt_port_scan ports are scanned within time_interval_port
-  seconds.
+port_scan_threshold = <value>
+* Defines a threshold that will trigger an alert when more than `port_scan_threshold`
+  ports are scanned within `port_scan_interval` seconds.
+* Defafult: 10
 
-time_interval_port = <value>
-* The threshold, in seconds, within which cnt_port_scan scanned ports will
+port_scan_interval = <value>
+* The interval, in seconds, within which `port_scan_threshold` scanned ports will
   trigger an alert.
+* Defafult: 60
 
 self_signed_cert_path = <value>
 * Optional self-signed CA PEM file to use when connecting to the PCE.
@@ -38,13 +41,25 @@ http_proxy = <value>
 https_proxy = <value>
 * Optional HTTPS proxy address to use when connecting to the PCE.
 
+http_retry_count = <value>
+* Number of times to retry HTTP requests to the PCE. Each retry has an
+  incremental backoff, starting at 1 second, then 2, then increasing
+  exponentially with subsequent retries.
+* Default: 5
+
+http_request_timeout = <value>
+* Total HTTP request timeout in seconds. Regardless of the retry count, if the
+  request has been unsuccessful for more than this many seconds, it will fail
+  with a timeout error.
+* Default: 30 (seconds)
+
 quarantine_labels = <value>
 *
 
 allowed_ips = <value>
-* Comma-separated list of IP addresses to exempt from the port scan alerts.
+* Comma-separated list of source IP addresses to exempt from port scan alerts.
 
 interval = <value>
 * How often to run the modular input. The value can be an integer (representing
   the number of seconds between each run) or a cron expression.
-* Default: 3600 (seconds)
+* Default: 1800 (seconds)
