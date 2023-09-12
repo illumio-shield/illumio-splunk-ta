@@ -33,13 +33,13 @@
       <view name="create"/>
       <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
     </element>
-    <element name="time_interval_port" label="Port Scan Interval">
+    <element name="port_scan_interval" label="Port Scan Interval">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
       <key name="exampleText">A port scan alert will be triggered if the scan threshold count is met during this interval (in seconds)</key>
     </element>
-    <element name="cnt_port_scan" label="Port Scan Threshold">
+    <element name="port_scan_threshold" label="Port Scan Threshold">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
@@ -55,7 +55,7 @@
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Comma-separated list of device IPs to be ignored by port scan alerts</key>
+      <key name="exampleText">Comma-separated list of source IPs to be ignored by port scan alerts</key>
     </element>
     <element name="spl-ctrl_EnableAdvanced" type="checkbox" label="More settings" class="spl-mgr-advanced-switch">
       <view name="edit"/>
@@ -87,6 +87,16 @@
           <view name="edit"/>
           <view name="create"/>
           <key name="exampleText">Optional HTTPS proxy address</key>
+        </element>
+        <element name="http_retry_count" label="HTTP Retry Count">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Number of times to retry HTTP requests to the PCE</key>
+        </element>
+        <element name="http_request_timeout" label="HTTP Request Timeout">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Total HTTP request timeout (in seconds)</key>
         </element>
         <element name="intervalFields" type="fieldset">
           <key name="legend"> </key>
