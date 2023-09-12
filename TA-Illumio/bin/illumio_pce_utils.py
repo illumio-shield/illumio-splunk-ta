@@ -7,57 +7,52 @@ Copyright:
 License:
     Apache2, see LICENSE for more details.
 """
-import time
-from dataclasses import dataclass, fields, field
 from typing import List
 from urllib.parse import urlparse
 
 from illumio import PolicyComputeEngine, Workload
 
+REALM = "illumio://"
 
-@dataclass
-class IllumioInputParameters:
-    """Dataclass to hold Illumio input parameters."""
 
-    name: str = ""
-    pce_url: str = ""
-    pce_port: int = 443
-    api_key_id: str = ""
-    api_secret: str = ""
-    org_id: int = 1
-    port_number: int = -1
-    time_interval_port: int = 60
-    cnt_port_scan: int = 10
-    allowed_ips: str = ""
-    self_signed_cert_path: str = ""
-    http_proxy: str = ""
-    https_proxy: str = ""
-    quarantine_labels: str = ""
-    # extra setting fields
-    host: str = ""
-    interval: str = "3600"
-    index: str = "default"
-    sourcetype: str = "illumio:pce:metadata"
-    disabled: bool = True
-    _api_secret_name: str = ""
-    _stanza: str = ""
+class PCEConnectionConfig:
+    """Config class to hold PCE client connecton details."""
 
-    def __post_init__(self):
-        # handle type conversion for all fields, ignoring nulls
-        for field in fields(self):
-            value = getattr(self, field.name)
-            if value is not None and not isinstance(value, field.type):
-                try:
-                    setattr(self, field.name, field.type(value))
-                except ValueError:
-                    raise ValueError(f"{field.name}: invalid value {value}")
-
+    def __init__(self, **kwargs):
+        self.pce_url = kwargs.get("pce_url")
         parsed = urlparse(self.pce_url)
-        if parsed.port:
-            self.pce_port = parsed.port
+        scheme = str(parsed.scheme) if parsed.scheme else "https"
+        default_port = 80 if scheme == "http" else 443
+        self.pce_port = parsed.port if parsed.port else int(kwargs.get("pce_port", default_port))
 
-        if self.org_id <= 0:
-            raise ValueError("Organization ID must be non-negative integer")
+        self.api_key_id = kwargs.get("api_key_id")
+        self.api_secret = kwargs.get("api_secret")
+        self.org_id = int(kwargs.get("org_id") or 1)
+        self.self_signed_cert_path = kwargs.get("self_signed_cert_path")
+        self.http_proxy = kwargs.get("http_proxy")
+        self.https_proxy = kwargs.get("https_proxy")
+        self.http_retry_count = int(kwargs.get("http_retry_count") or 5)
+        self.http_request_timeout = int(kwargs.get("http_request_timeout") or 30)
+
+
+class IllumioInputParameters(PCEConnectionConfig):
+    """Config class to hold Illumio input parameters."""
+
+    _api_secret_name: str
+    _stanza: str
+
+    def __init__(self, *, name: str, **kwargs):
+        # not using a dataclass to avoid errors on undefined attributes
+        self.name = name
+        self.index = kwargs.get("index")
+        self.source = kwargs.get("source")
+        self.sourcetype = kwargs.get("sourcetype")
+        self.port_number = int(kwargs.get("port_number") or -1)
+        self.port_scan_interval = int(kwargs.get("port_scan_interval") or 0)
+        self.port_scan_threshold = int(kwargs.get("port_scan_threshold") or 0)
+        self.allowed_ips = kwargs.get("allowed_ips")
+        self.quarantine_labels = kwargs.get("quarantine_labels")
+        super().__init__(**kwargs)
 
     @property
     def api_secret_name(self) -> str:
@@ -65,68 +60,100 @@ class IllumioInputParameters:
 
     @property
     def stanza(self) -> str:
-        realm = "illumio://"
-        if self.name.startswith(realm):
+        if self.name.startswith(REALM):
             return self.name.replace(":", r"\:")
-        return f"{realm}{self.name}".replace(":", r"\:")
+        return f"{REALM}{self.name}".replace(":", r"\:")
+
+    def port_scan_details(self) -> dict:
+        return {
+            "threshold": self.port_scan_threshold,
+            "interval": self.port_scan_interval,
+            "allowed_ips": self.allowed_ips,
+        }
 
 
-@dataclass
-class Supercluster:
-    """Dataclass to hold PCE Supercluster member information."""
+class Supercluster(PolicyComputeEngine):
+    def __init__(self, pce: PolicyComputeEngine, pce_status: List[dict]):
+        """PolicyComputeEngine subclass representing an Illumio Supercluster.
 
-    leader: str = ""
-    members: List[str] = field(default_factory=list)
-
-    @staticmethod
-    def from_status(clusters: List[dict]) -> "Supercluster":
-        """Parses PCE nodes and returns an `Supercluster` object.
-
-        If a non-Supercluster PCE status is provided, returns None.
-
-        Args:
-            clusters (List[dict]): list of cluster metadata objects.
+        Inherits from an existing PCE instance and checks the PCE status
+        endpoint to determine if it is a Supercluster.
 
         Raises:
-            Exception: if more than one or no Supercluster leader is defined.
-
-        Returns:
-            Supercluster: Supercluster dataclass object.
+            Exception: if a non-Supercluster PCE instance is provided.
         """
-        if len(clusters) < 2:
-            return None
+        self.leader = ""
+        self.members = []
 
-        supercluster = Supercluster()
-
-        for cluster in clusters:
+        for cluster in pce_status:
             cluster_type = cluster.get("type")
-            if not cluster_type:
-                continue
-
-            if cluster_type == "standalone":
-                continue
 
             if cluster_type == "leader":
-                if supercluster.leader:
-                    raise Exception("More than one Supercluster leader is defined.")
-                supercluster.leader = cluster["fqdn"]
-            else:
-                supercluster.members.append(cluster["fqdn"])
+                self.leader = cluster["fqdn"]
+            elif cluster_type == "member":
+                self.members.append(cluster["fqdn"])
 
-        if not supercluster.members:
-            return None
+    def __new__(cls, pce: PolicyComputeEngine, sc_status: List[dict]):
+        """Wrap the passed PolicyComputeEngine instance."""
+        pce.__class__ = cls
+        return pce
 
-        if not supercluster.leader:
-            raise Exception("Supercluster provided but no leader is defined.")
+    def get_workloads(self) -> List[Workload]:
+        """Retrieves workloads from all Supercluster members.
 
-        return supercluster
+        VEN uptime and last_heartbeat_at metadata is not replicated across the
+        Supercluster (as of PCE v23.1), so we need to call each SC member
+        individually to get paired workloads.
+
+        Since the Supercluster leader can change at any time, this function
+        must work when the input is configured for any cluster member.
+
+        Raises:
+            Exception: if the PCE connection to the leader and configured FQDN
+                both fail.
+
+        Returns:
+            List[Workload]: workloads retrieved from the Supercluster.
+        """
+        endpoint = self.workloads._build_endpoint(None, None)
+
+        try:
+            self._hostname = self.leader
+
+            # start by getting all workloads from the leader. this way, if a member
+            # cluster is down we still get the workload metadata even if we're
+            # missing some uptime/last_heartbeat_at values
+            resp = self.get_collection(endpoint, include_org=False)
+            mw_map = {}
+
+            # index workloads so we can update them with missing metadata
+            for workload in resp.json():
+                mw_map[workload["href"]] = workload
+        except Exception:
+            # if we can't connect to the leader, fall back on the configured FQDN
+            resp = self.get_collection(endpoint, include_org=False)
+            return resp.json()
+
+        for member_fqdn in self.members:
+            self._hostname = member_fqdn
+            # filtering by active_pce_fqdn gets all managed workloads paired to
+            # the specified cluster
+            paired_mw_query = {"managed": True, "agent.active_pce_fqdn": member_fqdn}
+            try:
+                resp = self.get_collection(endpoint, include_org=False, params=paired_mw_query)
+                for mw in resp.json():
+                    mw_map[mw["href"]] = mw
+            except Exception:
+                continue  # if a member is unreachable, still try the others
+
+        return list(mw_map.values())
 
 
-def connect_to_pce(params: IllumioInputParameters) -> PolicyComputeEngine:
+def connect_to_pce(config: PCEConnectionConfig) -> PolicyComputeEngine:
     """Attempts to connect to the PCE.
 
     Args:
-        params (IllumioInputParameters): script input parameters.
+        config (PCEConnectionConfig): script input parameters.
 
     Raises:
         Exception: if the connection could not be established.
@@ -135,64 +162,90 @@ def connect_to_pce(params: IllumioInputParameters) -> PolicyComputeEngine:
         PolicyComputeEngine: the PCE client object.
     """
     try:
+        pce = PolicyComputeEngine(
+            config.pce_url,
+            port=config.pce_port,
+            org_id=config.org_id,
+            retry_count=config.http_retry_count,
+            request_timeout=config.http_request_timeout,
+        )
+        pce.set_credentials(config.api_key_id, config.api_secret)
+        pce.set_tls_settings(verify=config.self_signed_cert_path or True)
+        pce.set_proxies(http_proxy=config.http_proxy, https_proxy=config.https_proxy)
         # TODO: support configurable retry params
-        pce = PolicyComputeEngine(params.pce_url, port=params.pce_port, org_id=params.org_id)
-        pce.set_credentials(params.api_key_id, params.api_secret)
-        pce.set_tls_settings(verify=params.self_signed_cert_path or True)
-        pce.set_proxies(http_proxy=params.http_proxy, https_proxy=params.https_proxy)
 
         pce.must_connect()
 
         return pce
     except Exception as e:
-        raise Exception(f"Failed to connect to PCE: {str(e)}")
+        raise Exception(f"Failed to connect to PCE: {e}")
 
 
-def get_supercluster_workloads(sc: Supercluster, params: IllumioInputParameters) -> List[Workload]:
-    """Retrieves workloads from all Supercluster members.
-
-    VEN uptime and last_heartbeat_at metadata is not replicated across the
-    Supercluster (as of PCE v23.1), so we need to call each SC member
-    individually to get paired workloads.
-
-    Since the Supercluster leader can change at any time, this function
-    must work when the input is configured for any cluster member.
+def is_supercluster(pce_status: List[dict]) -> bool:
+    """Checks if the given PCE status response describes a Supercluster.
 
     Args:
-        pce (PolicyComputeEngine): PCE connection client.
-        supercluster (Supercluster): Supercluster dataclass object.
+        pce_status (List[dict]): PCE status response object.
 
     Returns:
-        List[Workload]: workloads retrieved from the Supercluster.
+        bool: True if the PCE is a Supercluster, otherwise False.
     """
-    params.pce_url = sc.leader
-    pce = connect_to_pce(params)
+    if len(pce_status) < 2:
+        return False
 
-    # start by getting all workloads from the leader. this way, if a member
-    # cluster is down we still get the workload metadata even if we're
-    # missing some uptime/last_heartbeat_at values. unmanaged workloads
-    # are pulled in a separate request so that we have a smaller set to
-    # iterate over
-    managed_workloads = pce.workloads.get_async(params={"managed": True})
-    mw_map = {mw.hostname: mw for mw in managed_workloads}
-    unmanaged_workloads = pce.workloads.get_async(params={"managed": False})
+    leader = None
+    members = []
 
-    for member_fqdn in sc.members:
-        pce._hostname = member_fqdn
-        # filtering by last_heartbeat_at < now gets all managed workloads
-        # paired to the requested cluster, as other MWs will have null
-        # uptime/last_heartbeat_at values
-        paired_mw_query = {"managed": True, "last_heartbeat_at[lte]": time.time()}
-        for mw in pce.workloads.get_async(params=paired_mw_query):
-            mw_map[mw.hostname].agent.status.last_heartbeat_on = mw.agent.status.last_heartbeat_on
-            mw_map[mw.hostname].agent.status.uptime_seconds = mw.agent.status.uptime_seconds
+    for cluster in pce_status:
+        cluster_type = cluster.get("type")
 
-    return list(mw_map.values()) + unmanaged_workloads
+        if cluster_type == "leader":
+            if leader is not None:
+                return False
+            leader = cluster["fqdn"]
+        elif cluster_type == "member":
+            members.append(cluster["fqdn"])
+
+    return leader is not None and len(members) > 0
+
+
+def parse_label_scope(scope: str) -> dict:
+    """Parse label scopes passed as a string of the form k1:v1,k2:v2,...
+
+    Args:
+        scope (str): Policy scope as a comma-separated key:value pair list.
+
+    Raises:
+        ValueError: if the given scope format is invalid.
+
+    Returns:
+        dict: dict containing label key:value pairs.
+    """
+    label_dimensions = scope.split(",")
+    labels = {}
+    for label in label_dimensions:
+        if not label.strip():
+            continue
+
+        try:
+            k, v = label.split(":")
+        except Exception:
+            raise ValueError("Invalid format: must be key1:value1,key2:value2...")
+
+        if k.strip() in labels:
+            raise ValueError("Label scope keys must be unique")
+
+        labels[k.strip()] = v.strip()
+    if not labels:
+        raise ValueError("Empty label scope provided")
+    return labels
 
 
 __all__ = [
+    "PCEConnectionConfig",
     "IllumioInputParameters",
     "Supercluster",
     "connect_to_pce",
-    "get_supercluster_workloads",
+    "is_supercluster",
+    "parse_label_scope",
 ]

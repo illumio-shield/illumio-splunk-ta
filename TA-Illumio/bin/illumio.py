@@ -10,17 +10,17 @@ License:
     Apache2, see LICENSE for more details.
 """
 import sys
+import traceback
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List
+from typing import List, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from illumio import JsonObject, validate_int, PORT_MAX
+from illumio import validate_int, PORT_MAX, ACTIVE
 
 import splunklib.client as client
-from splunklib.binding import HTTPError
 from splunklib.modularinput import (
     Script,
     Scheme,
@@ -32,6 +32,8 @@ from splunklib.modularinput import (
 )
 
 from illumio_pce_utils import *
+
+SYSLOG_SOURCETYPE = "illumio:pce"
 
 
 class Illumio(Script):
@@ -63,8 +65,8 @@ class Illumio(Script):
                 title="Organization ID",
                 description="PCE Organization ID",
                 data_type=Argument.data_type_number,
-                required_on_create=False,
-                required_on_edit=False,
+                required_on_create=True,
+                required_on_edit=True,
             )
         )
 
@@ -83,7 +85,7 @@ class Illumio(Script):
             Argument(
                 name="port_number",
                 title="Port Number for syslogs (TCP)",
-                description="Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514",
+                description="Port for Splunk to receive traffic flows and events from the PCE. Not required if these events are being pulled from S3",
                 data_type=Argument.data_type_number,
                 required_on_create=False,
                 required_on_edit=False,
@@ -92,23 +94,23 @@ class Illumio(Script):
 
         scheme.add_argument(
             Argument(
-                name="time_interval_port",
+                name="port_scan_interval",
                 title="Port Scan Interval",
                 description="A port scan alert will be triggered if the scan threshold count is met during this interval (in seconds)",
                 data_type=Argument.data_type_number,
-                required_on_create=False,
-                required_on_edit=False,
+                required_on_create=True,
+                required_on_edit=True,
             )
         )
 
         scheme.add_argument(
             Argument(
-                name="cnt_port_scan",
+                name="port_scan_threshold",
                 title="Port Scan Threshold",
                 description="Number of scanned ports that triggers a port scan alert",
                 data_type=Argument.data_type_number,
-                required_on_create=False,
-                required_on_edit=False,
+                required_on_create=True,
+                required_on_edit=True,
             )
         )
 
@@ -138,7 +140,7 @@ class Illumio(Script):
             Argument(
                 name="self_signed_cert_path",
                 title="Self-Signed Certificate Path",
-                description="Path for the custom root certificate, e.g. '$SPLUNK_HOME/etc/apps/TA-Illumio/bin/cert.pem'",
+                description="Path for the custom root certificate. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/bin/cert.pem'",
                 data_type=Argument.data_type_string,
                 required_on_create=False,
                 required_on_edit=False,
@@ -167,6 +169,28 @@ class Illumio(Script):
             )
         )
 
+        scheme.add_argument(
+            Argument(
+                name="http_retry_count",
+                title="HTTP Retry Count",
+                description="Number of times to retry HTTP requests to the PCE",
+                data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="http_request_timeout",
+                title="HTTP Request Timeout",
+                description="Total HTTP request timeout (in seconds)",
+                data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
         return scheme
 
     def validate_input(self, definition: ValidationDefinition) -> None:
@@ -178,11 +202,38 @@ class Illumio(Script):
         Raises:
             ValueError: If any input params are invalid.
         """
-        params = IllumioInputParameters(name=definition.metadata["name"], **definition.parameters)
+        for arg in self.get_scheme().arguments:
+            if arg.name == "port_number":
+                continue  # validated separately below
+            if arg.data_type == Argument.data_type_number:
+                try:
+                    param = definition.parameters.get(arg.name)
+                    if param is not None and str(param) != "":
+                        validate_int(definition.parameters[arg.name], minimum=1)
+                except Exception:
+                    raise ValueError(f"{arg.title} must be a non-negative integer")
 
         # the Script service property isn't available during validation,
         # so initialize it using the session token in the input metadata
         self._service = client.connect(token=definition.metadata["session_key"])
+
+        port_number = definition.parameters.get("port_number")
+        if port_number is not None and str(port_number) != "":
+            try:
+                validate_int(port_number, minimum=1, maximum=PORT_MAX)
+            except Exception:
+                raise ValueError("Port Number must be an integer between 1 and 65535")
+
+            tcp_input = self._get_tcp_input(port_number)
+
+            if tcp_input and tcp_input.sourcetype != SYSLOG_SOURCETYPE:
+                raise ValueError(f"Port Number: {str(port_number)} TCP is already in use")
+
+        params = IllumioInputParameters(name=definition.metadata["name"], **definition.parameters)
+        # lower the timeout and retry count for validation; Splunk will
+        # time out the input after 30 seconds either way
+        params.http_request_timeout = 5
+        params.http_retry_count = 1
 
         # the API secret is stored in storage/passwords on the front-end,
         # so we need to fetch it to validate the PCE connection
@@ -191,33 +242,14 @@ class Illumio(Script):
         # test the connection to the PCE
         connect_to_pce(params)
 
-        if params.port_number:
-            try:
-                validate_int(params.port_number, maximum=PORT_MAX)
-            except Exception:
-                raise ValueError("Port Number must be an integer between 0 and 65535")
-
-            port_available = self._syslog_port_available(params.port_number)
-
-            if not port_available:
-                raise ValueError(f"Port Number: {str(params.port_number)} TCP is already in use")
-
-        if params.time_interval_port and params.time_interval_port < 0:
-            raise ValueError("Port Scan Interval must be non negative integer")
-
-        if params.cnt_port_scan and params.cnt_port_scan < 0:
-            raise ValueError("Port Scan Threshold must be non negative integer")
-
-        # TODO: test interval validation (it should already be validated by the UI)
-
         if params.allowed_ips:
             import ipaddress
 
             for ip in params.allowed_ips.split(","):
                 ipaddress.ip_address(ip.strip())
 
-        # TODO: reimplement quarantine label validation for MT4L
-        # quarantine_labels = definition.parameters["quarantine_labels"]
+        if params.quarantine_labels:
+            parse_label_scope(params.quarantine_labels)
 
     def stream_events(self, inputs: InputDefinition, ew: EventWriter):
         """Modular input entry point.
@@ -238,67 +270,89 @@ class Illumio(Script):
                 ew.log(EventWriter.INFO, f"Running input {app_name}/{params.stanza}")
 
                 if params.port_number and params.port_number > 0:
-                    self._create_syslog_input(params)
-                # TODO: do we still need the port scan details event?
+                    # create the /tcp/raw input for the configured port if it doesn't exist
+                    if self._get_tcp_input(params.port_number) is None:
+                        self.service.inputs.create(
+                            str(params.port_number),
+                            "tcp",
+                            connection_host="dns",
+                            index=params.index,
+                            sourcetype=SYSLOG_SOURCETYPE,
+                        )
 
                 # retrieve the API secret from storage/passwords
                 params.api_secret = self._get_password(params.api_secret_name)
 
                 pce = connect_to_pce(params)
+                pce_fqdn = pce._hostname
 
-                # get PCE health so we can determine if the PCE is part of a
-                # Supercluster. we need to do this each time rather than
-                # storing the cluster members as members may change over time,
-                # the leader may change, or members may be unavailable
+                def _pce_event(data: dict, format: str = "metadata") -> Event:
+                    return Event(
+                        data=json.dumps(data),
+                        host=pce_fqdn,
+                        index=params.index,
+                        source=params.source,
+                        # XXX: there's probably a better way to handle the sourcetypes
+                        sourcetype=f"illumio:pce:{format}",
+                    )
+
+                # write an event containing port scan details
+                ew.log(EventWriter.INFO, f"Writing port scan settings to KVStore")
+                self._update_kvstore("port_scan_settings", pce_fqdn, [params.port_scan_details()])
+
+                # get PCE status and store each cluster in the response as a separate event
                 resp = pce.get("/health", include_org=False)
                 resp.raise_for_status()
 
-                supercluster = Supercluster.from_status(resp.json())
+                pce_status = resp.json()
+
+                for cluster in pce_status:
+                    ew.write_event(_pce_event(cluster, "health"))
+                ew.log(EventWriter.INFO, f"Retrieved {pce_fqdn} PCE cluster status")
 
                 def _store_pce_objects(api, illumio_type: str) -> Event:
-                    pce_objects = []
+                    if illumio_type == "workloads" and is_supercluster(pce_status):
+                        # the PCE object isn't thread-safe, so create a second instance
+                        # here as we will need to reassign the internal _hostname value
+                        # to pull workloads from each Supercluster member
+                        supercluster = Supercluster(connect_to_pce(params), pce_status)
+                        pce_objects = supercluster.get_workloads()
+                    else:
+                        # fetch active versions of policy objects; the param is ignored
+                        # for labels and workloads
+                        endpoint = api._build_endpoint(ACTIVE, None)
+                        response = api.pce.get_collection(endpoint, include_org=False)
+                        pce_objects = response.json()
 
-                    if illumio_type == "illumio_workloads" and supercluster:
-                        # pass a deepcopy of the PCE client so we can update the
-                        # hostname to call each cluster member without affecting
-                        # other threads
-                        pce_objects = get_supercluster_workloads(supercluster, params)
-
-                    # if we can't connect to the Supercluster members, fall
-                    # back on getting all workloads from the configured PCE
-                    if not pce_objects:
-                        pce_objects = api.get_async()
-
-                    pce_fqdn = pce._hostname
                     self._update_kvstore(illumio_type, pce_fqdn, pce_objects)
+                    obj_count = len(pce_objects)
 
                     metadata = {
-                        "illumio_type": illumio_type,
+                        "pce_fqdn": pce_fqdn,
+                        "illumio_type": f"illumio:pce:{illumio_type}",
                         # TODO: online/offline workloads count?
-                        "total_objects": len(pce_objects),
+                        "total_objects": obj_count,
                     }
 
-                    ew.log(EventWriter.INFO, f"Retrieved {len(pce_objects)} {illumio_type}")
-                    return Event(
-                        data=json.dumps(metadata),
-                        host=pce_fqdn,
-                        source="Illumio PCE",
-                        index=params.index,
-                        sourcetype=params.sourcetype,
-                    )
+                    ew.log(EventWriter.INFO, f"Retrieved {obj_count} {illumio_type}")
+                    return _pce_event(metadata)
 
                 with ThreadPoolExecutor() as exec:
+                    # XXX: should we be getting the active versions of
+                    # services/IP lists here?
                     tasks = (
-                        (_store_pce_objects, pce.labels, "illumio_labels"),
-                        (_store_pce_objects, pce.ip_lists, "illumio_ip_lists"),
-                        (_store_pce_objects, pce.services, "illumio_services"),
-                        (_store_pce_objects, pce.workloads, "illumio_workloads"),
+                        (_store_pce_objects, pce.labels, "labels"),
+                        (_store_pce_objects, pce.ip_lists, "ip_lists"),
+                        (_store_pce_objects, pce.services, "services"),
+                        (_store_pce_objects, pce.workloads, "workloads"),
+                        (_store_pce_objects, pce.rule_sets, "rule_sets"),
                     )
                     futures = (exec.submit(*task) for task in tasks)
                     for future in as_completed(futures):
                         ew.write_event(future.result())
             except Exception as e:
                 ew.log(EventWriter.ERROR, f"Error while running Illumio PCE input: {e}")
+                ew.log(EventWriter.ERROR, f"Traceback: {traceback.format_exc()}")
 
     def _get_password(self, name: str) -> str:
         """Retrieves a password from the Splunk storage/passwords endpoint.
@@ -319,88 +373,52 @@ class Illumio(Script):
         except Exception as e:
             raise Exception(f"Failed to retrieve password {name} from storage/passwords: {e}")
 
-    def _update_kvstore(self, kvstore_name: str, pce_fqdn: str, pce_objs: List[JsonObject]):
+    def _update_kvstore(self, obj_type: str, pce_fqdn: str, pce_objs: List[dict]):
         """Updates a specified KVStore with the given PCE objects.
 
         Any existing KVStore data is removed and replaced to avoid stale state.
 
         Args:
             pce_fqdn (str): the PCE FQDN to append to each object's fields.
-            pce_objs (List[JsonObject]): list of PCE objects.
-            kvstore_name (str): the name of the KVStore to update.
+            pce_objs (List[dict]): list of PCE objects.
+            obj_type (str): the type of object being stored.
 
         Raises:
             Exception: if the specified KVStore doesn't exist.
         """
+        kvstore_name = f"illumio_{obj_type}"
         kvstores = self.service.kvstore
         if kvstore_name not in kvstores:
             # XXX: should we create the kvstore if it doesn't exist?
             raise Exception(f"Failed to find KV store for type: {kvstore_name}")
         kvstore = kvstores[kvstore_name]
 
-        # delete all existing objects in the KV store before
-        # repopulating to avoid stale entries that have been
-        # removed from the PCE
-        kvstore.data.delete()
+        # delete all objects belonging to the given PCE in the KV store before
+        # updating to avoid retaining objects that were removed from the PCE.
+        # KVStores use mongodb under the hood, so the query is a stringified
+        # mongo eq expression; URL encoding is handled by the Splunk client
+        kvstore.data.delete(query=f'{{"pce_fqdn": "{pce_fqdn}"}}')
 
         for pce_obj in pce_objs:
-            o = pce_obj.to_json()
+            o = pce_obj
             o["pce_fqdn"] = pce_fqdn
-            o["_key"] = pce_obj.href
+            # prepend the PCE FQDN to ensure uniqueness across multiple PCEs
+            o["_key"] = pce_fqdn + (":" + o["href"]) if "href" in o else ""
+            # add convenience field indicating managed/unmanaged
+            if "/workloads/" in o["_key"]:
+                o["managed"] = o["ven"] is not None
             kvstore.data.insert(o)
 
-    def _create_syslog_input(self, params: IllumioInputParameters) -> None:
-        """Creates a /tcp/raw input for the given port.
-
-        Args:
-            params (IllumioInputParameters): modinput configuration params.
-
-        Raises:
-            HTTPError: if an unexpected HTTP error code is returned.
-            Exception: if the port is unavailable or another error occurs while
-                trying to create the input.
-        """
-        if not self._syslog_port_available(params.port_number):
-            raise Exception(f"Syslog port {params.port_number} is unavailable.")
-
-        try:
-            self.service.inputs.create(
-                str(params.port_number),
-                "tcp",
-                index=params.index,
-                # XXX: should this be the configured sourcetype instead?
-                sourcetype="illumio:pce",
-            )
-        except HTTPError as e:
-            if e.status == 409:
-                return  # XXX: test this to make sure it works as expected
-            raise e
-        except Exception as e:
-            raise Exception(f"Unable to create syslog input for port {params.port_number}: {e}")
-
-    def _syslog_port_available(self, port_number: int) -> bool:
-        """Checks if a TCP input has been created for the given syslog port.
+    def _get_tcp_input(self, port_number: int) -> Any:
+        """Retrieves a TCP input for the given syslog port from Splunk.
 
         Returns:
-            bool: True if the port is available or claimed by an illumio:pce
-                input, otherwise False.
-
-        Raises:
-            HTTPError: if a non-404 response is returned from Splunk.
-            Exception: if the response from Splunk can't be parsed.
+            Any: the Input object, or None if the input is not defined.
         """
         try:
-            resp = self.service.inputs.get(f"tcp/raw/{port_number}", output_mode="json")
-
-            with resp.body as response_body:
-                entries = json.loads(response_body.read())["entry"]
-                return entries[0]["content"]["sourcetype"] == "illumio:pce"
-        except HTTPError as e:
-            if e.status == 404:
-                return True
-            raise e
-        except Exception as e:
-            raise Exception(f"Unable to determine if syslog port is available: {e}")
+            return self.service.inputs[(str(port_number), "tcp")]
+        except Exception:
+            raise None
 
 
 if __name__ == "__main__":
