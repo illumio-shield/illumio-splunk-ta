@@ -418,7 +418,7 @@ class Illumio(Script):
         try:
             return self.service.inputs[(str(port_number), "tcp")]
         except Exception:
-            raise None
+            return None
 
 
 if __name__ == "__main__":
