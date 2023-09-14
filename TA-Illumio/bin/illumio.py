@@ -217,10 +217,7 @@ class Illumio(Script):
 
         # the Script service property isn't available during validation,
         # so initialize it using the session token in the input metadata
-        self._service = client.connect(
-            token=definition.metadata["session_key"],
-            app=definition.metadata["app"],
-        )
+        self._service = client.connect(token=definition.metadata["session_key"])
 
         port_number = definition.parameters.get("port_number")
         if port_number is not None and str(port_number) != "":
