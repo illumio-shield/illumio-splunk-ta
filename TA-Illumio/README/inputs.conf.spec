@@ -22,15 +22,20 @@ port_number = <value>
   used for direct push from the PCE; syslogs pulled from AWS S3 must be
   configured separately.
 
+enable_tcp_ssl = <value>
+* Toggles SSL for the TCP syslog input. The [SSL] stanza must be configured
+  separately.
+* Default: 1
+
 port_scan_threshold = <value>
 * Defines a threshold that will trigger an alert when more than `port_scan_threshold`
   ports are scanned within `port_scan_interval` seconds.
-* Defafult: 10
+* Default: 10
 
 port_scan_interval = <value>
 * The interval, in seconds, within which `port_scan_threshold` scanned ports will
   trigger an alert.
-* Defafult: 60
+* Default: 60
 
 self_signed_cert_path = <value>
 * Optional self-signed CA PEM file to use when connecting to the PCE.
@@ -52,9 +57,6 @@ http_request_timeout = <value>
   request has been unsuccessful for more than this many seconds, it will fail
   with a timeout error.
 * Default: 30 (seconds)
-
-quarantine_labels = <value>
-*
 
 allowed_ips = <value>
 * Comma-separated list of source IP addresses to exempt from port scan alerts.

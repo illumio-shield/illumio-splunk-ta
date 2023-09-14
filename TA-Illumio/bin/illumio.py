@@ -84,9 +84,20 @@ class Illumio(Script):
         scheme.add_argument(
             Argument(
                 name="port_number",
-                title="Port Number for syslogs (TCP)",
+                title="Syslog Port (TCP)",
                 description="Port for Splunk to receive traffic flows and events from the PCE. Not required if these events are being pulled from S3",
                 data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="enable_tcp_ssl",
+                title="Enable TCP-SSL",
+                description="Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf",
+                data_type=Argument.data_type_boolean,
                 required_on_create=False,
                 required_on_edit=False,
             )
@@ -119,17 +130,6 @@ class Illumio(Script):
                 name="allowed_ips",
                 title="Allowed Port Scan IPs",
                 description="Comma-separated list of device IPs to be ignored by port scan alerts",
-                data_type=Argument.data_type_string,
-                required_on_create=False,
-                required_on_edit=False,
-            )
-        )
-
-        scheme.add_argument(
-            Argument(
-                name="quarantine_labels",
-                title="Quarantine Label Dimensions",
-                description="Comma-separated list of label names to define workload quarantine",
                 data_type=Argument.data_type_string,
                 required_on_create=False,
                 required_on_edit=False,
@@ -215,7 +215,10 @@ class Illumio(Script):
 
         # the Script service property isn't available during validation,
         # so initialize it using the session token in the input metadata
-        self._service = client.connect(token=definition.metadata["session_key"])
+        self._service = client.connect(
+            token=definition.metadata["session_key"],
+            app=definition.metadata["app"],
+        )
 
         port_number = definition.parameters.get("port_number")
         if port_number is not None and str(port_number) != "":
@@ -248,9 +251,6 @@ class Illumio(Script):
             for ip in params.allowed_ips.split(","):
                 ipaddress.ip_address(ip.strip())
 
-        if params.quarantine_labels:
-            parse_label_scope(params.quarantine_labels)
-
     def stream_events(self, inputs: InputDefinition, ew: EventWriter):
         """Modular input entry point.
 
@@ -267,18 +267,14 @@ class Illumio(Script):
             params = IllumioInputParameters(name=input_name, **input_item)
 
             try:
+                # set app context for the Splunk REST client
+                self.service.namespace.app = app_name
                 ew.log(EventWriter.INFO, f"Running input {app_name}/{params.stanza}")
 
                 if params.port_number and params.port_number > 0:
                     # create the /tcp/raw input for the configured port if it doesn't exist
                     if self._get_tcp_input(params.port_number) is None:
-                        self.service.inputs.create(
-                            str(params.port_number),
-                            "tcp",
-                            connection_host="dns",
-                            index=params.index,
-                            sourcetype=SYSLOG_SOURCETYPE,
-                        )
+                        self._create_tcp_input(app_name, params)
 
                 # retrieve the API secret from storage/passwords
                 params.api_secret = self._get_password(params.api_secret_name)
@@ -338,8 +334,6 @@ class Illumio(Script):
                     return _pce_event(metadata)
 
                 with ThreadPoolExecutor() as exec:
-                    # XXX: should we be getting the active versions of
-                    # services/IP lists here?
                     tasks = (
                         (_store_pce_objects, pce.labels, "labels"),
                         (_store_pce_objects, pce.ip_lists, "ip_lists"),
@@ -419,6 +413,28 @@ class Illumio(Script):
             return self.service.inputs[(str(port_number), "tcp")]
         except Exception:
             return None
+
+    def _create_tcp_input(self, app: str, params: IllumioInputParameters) -> None:
+        """Creates a TCP input in the given app using the provided parameters.
+
+        Args:
+            app (str): the app to create the input in.
+            params (IllumioInputParameters): input parameters.
+        """
+        stanza_type = "tcp-ssl" if params.enable_tcp_ssl else "tcp"
+
+        # we can't use service.inputs here as it doesn't support tcp-ssl.
+        # tcp inputs have an SSL property, but it's poorly documented and
+        # not clear if it has the same effect
+        self.service.post(
+            client.PATH_CONF % "inputs",
+            name=f"{stanza_type}://{params.port_number}",
+            app=app,
+            connection_host="dns",
+            index=params.index,
+            sourcetype=SYSLOG_SOURCETYPE,
+            disabled=0,
+        )
 
 
 if __name__ == "__main__":

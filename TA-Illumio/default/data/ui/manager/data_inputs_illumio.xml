@@ -27,11 +27,15 @@
       <key name="prefix">illumio://</key>
       <key name="keyExampleText">Illumio API key username. Example value: 'api_145a5c788e63c30a3'</key>
     </element>
-    <element name="port_number" label="Port Number for syslogs (TCP)">
+    <element name="port_number" label="Syslog Port (TCP)">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
       <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
+    </element>
+    <element name="enable_tcp_ssl" type="checkbox" label="Enable TCP-SSL">
+      <view name="create"/>
+      <key name="exampleText">Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf</key>
     </element>
     <element name="port_scan_interval" label="Port Scan Interval">
       <view name="list"/>
@@ -44,12 +48,6 @@
       <view name="edit"/>
       <view name="create"/>
       <key name="exampleText">Number of scanned ports that triggers a port scan alert</key>
-    </element>
-    <element name="quarantine_labels" label="Quarantine Label Dimensions">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Comma-separated list of label names to define workload quarantine</key>
     </element>
     <element name="allowed_ips" label="Allowed Port Scan IPs">
       <view name="list"/>
