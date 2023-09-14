@@ -13,6 +13,7 @@ import sys
 import traceback
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import List, Any
 
@@ -34,6 +35,7 @@ from splunklib.modularinput import (
 from illumio_pce_utils import *
 
 SYSLOG_SOURCETYPE = "illumio:pce"
+HEALTH_SOURCETYPE = "illumio:pce:health"
 
 
 class Illumio(Script):
@@ -282,14 +284,13 @@ class Illumio(Script):
                 pce = connect_to_pce(params)
                 pce_fqdn = pce._hostname
 
-                def _pce_event(data: dict, format: str = "metadata") -> Event:
+                def _pce_event(sourcetype: str = SYSLOG_SOURCETYPE, **kwargs) -> Event:
                     return Event(
-                        data=json.dumps(data),
+                        data=json.dumps(kwargs),
                         host=pce_fqdn,
                         index=params.index,
                         source=params.source,
-                        # XXX: there's probably a better way to handle the sourcetypes
-                        sourcetype=f"illumio:pce:{format}",
+                        sourcetype=sourcetype,
                     )
 
                 # write an event containing port scan details
@@ -303,7 +304,7 @@ class Illumio(Script):
                 pce_status = resp.json()
 
                 for cluster in pce_status:
-                    ew.write_event(_pce_event(cluster, "health"))
+                    ew.write_event(_pce_event(HEALTH_SOURCETYPE, **cluster))
                 ew.log(EventWriter.INFO, f"Retrieved {pce_fqdn} PCE cluster status")
 
                 def _store_pce_objects(api, illumio_type: str) -> Event:
@@ -323,15 +324,13 @@ class Illumio(Script):
                     self._update_kvstore(illumio_type, pce_fqdn, pce_objects)
                     obj_count = len(pce_objects)
 
-                    metadata = {
-                        "pce_fqdn": pce_fqdn,
-                        "illumio_type": f"illumio:pce:{illumio_type}",
-                        # TODO: online/offline workloads count?
-                        "total_objects": obj_count,
-                    }
-
                     ew.log(EventWriter.INFO, f"Retrieved {obj_count} {illumio_type}")
-                    return _pce_event(metadata)
+                    return _pce_event(
+                        pce_fqdn=pce_fqdn,
+                        illumio_type=f"illumio:pce:{illumio_type}",
+                        total_objects=obj_count,
+                        timestamp=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    )
 
                 with ThreadPoolExecutor() as exec:
                     tasks = (
