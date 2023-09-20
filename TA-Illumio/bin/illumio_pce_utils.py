@@ -10,9 +10,9 @@ License:
 import re
 import socket
 from typing import List
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
-from illumio import PolicyComputeEngine
+from illumio import PolicyComputeEngine, href_from
 
 REALM = "illumio://"
 
@@ -305,6 +305,249 @@ def service_port_to_string(service_port: dict) -> str:
     return f"{port_range.strip('-')} {proto}".strip()
 
 
+def flatten_ingress_services(services: List[dict]) -> List[str]:
+    """Flattens the given ingress service entries into a string list.
+
+    Service HREF objects simplify to the HREF string, and port ranges are
+    changed to a string representation, for example:
+
+    "ingress_services": [
+        {
+            "href": "/orgs/1/sec_policy/active/services/19"
+        },
+        {
+            "port": 443,
+            "proto": 6
+        },
+        {
+            "port": 127,
+            "to_port": 128,
+            "proto": 17
+        }
+    ]
+
+    becomes
+
+    [ "/orgs/1/sec_policy/active/services/19", "443 tcp", "127-128 udp" ]
+
+    Args:
+        services (List[dict]): list of ingress service entries.
+
+    Returns:
+        List[str]: flattened list of services.
+    """
+    flattened_services = []
+
+    for service in services:
+        # services can be either an HREF object or a port range
+        try:
+            flattened_services.append(href_from(service))
+            continue
+        except Exception:
+            if not "proto" in service:
+                continue
+        flattened_services.append(service_port_to_string(service))
+
+    return flattened_services
+
+
+def flatten_scope(scope: List[dict]) -> dict:
+    """Given a rule set or rule scope, flattens it into a dictionary.
+
+    Rule set scopes are lists of lists defining one or more sets of label
+    dimensions the rule set is bounded by. In newer versions of the PCE,
+    each dimension also includes an exclusion parameter:
+
+    scopes = [
+        [
+            {
+                "label": {
+                    "href": "/orgs/1/labels/9"
+                },
+                "exclusion": false
+            },
+            {
+                "label_group": {
+                    "href": "/orgs/1/label_groups/13"
+                },
+                "exclusion": false
+            }
+        ],
+        ...
+    ]
+
+    To avoid the relationships being lost when converted to multivalue
+    fields, the structure is flattened as an enumerated dict:
+
+    scopes: {"0": {"exclusions": ["a", "b"], "inclusions": ["c", "d"]}}
+    scopes.0.exclusions = [a, b], scopes.0.inclusions = [c, d]
+
+    Similarly, rule providers and consumers consist of actors that define
+    the scope of the rule:
+
+    "providers": [
+        {
+            "ip_list": {
+                "href": "/orgs/1/sec_policy/active/ip_lists/9"
+            }
+        }
+    ],
+    "consumers": [
+        {
+            "actors": "ams"
+        }
+    ]
+
+    These can be flattened in a similar manner:
+
+    providers: {"exclusions": [], "inclusions": ["/orgs/1/sec_policy/..."]}
+    consumers: {"exclusions": [], "inclusions": ["ams"]}
+
+    Args:
+        scope (List[dict]): list of scope dimensions or rule actors.
+
+    Returns:
+        dict: the flattened scope output.
+    """
+    flattened_actors = {}
+
+    for dimension in scope:
+        key = "exclusions" if dimension.pop("exclusion", False) else "inclusions"
+
+        if "actors" in dimension:
+            flattened_actors[key] = dimension["actors"]
+            continue
+
+        for k in dimension.keys():
+            # rather than hardcode type checks, just iterate over all keys
+            # and extract the first HREF
+            try:
+                href = href_from(dimension[k])
+                flattened_actors[key] = flattened_actors.get(key, []) + [href]
+                continue
+            except Exception:
+                pass
+
+    return flattened_actors
+
+
+def flatten_rules(rule_set: dict) -> List[dict]:
+    """Given a rule set object, extracts and flattens all contained rules.
+
+    Rules, IP tables rules, and deny rules are combined in a single KVStore
+    collection. Fields with nested values (services, consumers, providers)
+    are flattened to avoid loss of cohesion when converted to MV fields.
+
+    Args:
+        rule_set (dict): the rule set object to extract from.
+
+    Returns:
+        List[dict]: the flattened rule objects.
+    """
+    rules = []
+
+    for rule_type in ("rules", "ip_tables_rules", "deny_rules"):
+        for rule in rule_set.pop(rule_type, []):
+            rule["type"] = rule_type
+            rule["rule_set_href"] = rule_set["href"]
+            # rules and deny rules share the same attributes
+            rule["ingress_services"] = flatten_ingress_services(rule.get("ingress_services", []))
+            rule["egress_services"] = [href_from(s) for s in rule.get("egress_services", [])]
+            rule["providers"] = flatten_scope(rule.get("providers", []))
+            rule["consumers"] = flatten_scope(rule.get("consumers", []))
+            rule["consuming_security_principals"] = [
+                href_from(s) for s in rule.get("consuming_security_principals", [])
+            ]
+            # IP tables rules fields
+            rule["statements"] = [
+                f"{s['table_name']} {s['chain_name']} {s['parameters']}"
+                for s in rule.get("statements", [])
+            ]
+            rule["actors"] = flatten_scope(rule.get("actors", []))
+
+            rules.append(rule)
+
+    return rules
+
+
+def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
+    """Flattens a given IP list object into multiple entries.
+
+    An entry is created for each IP range in the IP list object. Each entry
+    has a unique key suffix of the form < from_ip:to_ip >.
+
+    FQDNs are flattened into a list of strings and their descriptions are
+    stripped from the resulting entries.
+
+    Args:
+        service (dict): PCE service object in JSON dict form.
+        pce_fqdn (str): PCE FQDN to prefix the IP list entry keys.
+
+    Returns:
+        List[dict]: IP list entries flattened from the given object.
+    """
+    ip_list_entries = []
+
+    # strip the FQDN descriptions and flatten them as an array of strings
+    ip_list["fqdns"] = [fqdn["fqdn"] for fqdn in ip_list.pop("fqdns", [])]
+
+    for ip_range in ip_list.pop("ip_ranges", []):
+        key = f"{pce_fqdn}:{ip_list['href']}:{ip_range.get('from_ip')}:{ip_range.get('to_ip')}"
+        # rename the IP range description field
+        ip_range["ip_range_description"] = ip_range.get("description")
+        ip_list_entries.append({**ip_list, **ip_range, "_key": key})
+
+    return ip_list_entries
+
+
+def flatten_service(service: dict, pce_fqdn: str) -> List[dict]:
+    """Flattens a given service object into multiple entries.
+
+    An entry is created for each service definition in the Service object.
+    Each entry has a unique key suffix based on its metadata, of the form
+    < port:to_port:icmp_type:icmp_code:proto:service_name:process_name >
+    with any null or empty fields removed.
+
+    Args:
+        service (dict): PCE service object in JSON dict form.
+        pce_fqdn (str): PCE FQDN to prefix the service entry keys.
+
+    Returns:
+        List[dict]: service entries flattened from the given object.
+    """
+    service_entries = []
+
+    service_ports = service.pop("service_ports", [])
+    windows_services = service.pop("windows_services", [])
+    windows_egress_services = service.pop("windows_egress_services", [])
+
+    for entry in service_ports + windows_services + windows_egress_services:
+        # convert protocol numbers to their string equivalent
+        if "proto" in entry:
+            entry["proto"] = getprotobynum(entry["proto"])
+        # construct a unique suffix for each service entry, made up of port
+        # and proto (Linux service) and service/proc name (Windows service)
+        # this lets us track each entry if it's removed from the service or
+        # if the service itself is removed
+        entry_key = ":".join([
+            quote(str(k), safe="") for k in (
+                entry.get("port"),
+                entry.get("to_port"),
+                entry.get("icmp_type"),
+                entry.get("icmp_code"),
+                entry.get("proto"),
+                entry.get("service_name"),
+                entry.get("process_name"),
+            ) if k
+        ])
+        key = f"{pce_fqdn}:{service['href']}:{entry_key}"
+        # rename the top-level process_name field to avoid overwriting it
+        service["spn"] = service.get("process_name")
+        service_entries.append({**service, **entry, "_key": key})
+
+    return service_entries
+
+
 __all__ = [
     "PCEConnectionConfig",
     "IllumioInputParameters",
@@ -314,4 +557,9 @@ __all__ = [
     "parse_label_scope",
     "getprotobynum",
     "service_port_to_string",
+    "flatten_ingress_services",
+    "flatten_scope",
+    "flatten_rules",
+    "flatten_ip_list",
+    "flatten_service",
 ]
