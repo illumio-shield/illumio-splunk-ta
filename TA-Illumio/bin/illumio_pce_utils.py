@@ -7,10 +7,12 @@ Copyright:
 License:
     Apache2, see LICENSE for more details.
 """
+import re
+import socket
 from typing import List
 from urllib.parse import urlparse
 
-from illumio import PolicyComputeEngine, Workload
+from illumio import PolicyComputeEngine
 
 REALM = "illumio://"
 
@@ -20,11 +22,7 @@ class PCEConnectionConfig:
 
     def __init__(self, **kwargs):
         self.pce_url = kwargs.get("pce_url")
-        parsed = urlparse(self.pce_url)
-        scheme = str(parsed.scheme) if parsed.scheme else "https"
-        default_port = 80 if scheme == "http" else 443
-        self.pce_port = parsed.port if parsed.port else int(kwargs.get("pce_port", default_port))
-
+        self.pce_fqdn, self.pce_port = self._parse_url(self.pce_url)
         self.api_key_id = kwargs.get("api_key_id")
         self.api_secret = kwargs.get("api_secret")
         self.org_id = int(kwargs.get("org_id") or 1)
@@ -33,6 +31,26 @@ class PCEConnectionConfig:
         self.https_proxy = kwargs.get("https_proxy")
         self.http_retry_count = int(kwargs.get("http_retry_count") or 5)
         self.http_request_timeout = int(kwargs.get("http_request_timeout") or 30)
+
+    def _parse_url(self, url: str) -> tuple:
+        """Parses the given URL, returning a tuple containing the FQDN and port.
+
+        Unless specified in the URL, the port value defaults to 80 or 443 are
+        for scheme values of http:// and https:// respectively. Any other
+        scheme value will default to 443.
+
+        Args:
+            url (str): the URL to parse.
+
+        Returns:
+            tuple: of the form (fqdn, port)
+        """
+        pattern = re.compile("^\w+://")
+        if not re.match(pattern, url):
+            url = f"https://{url}"
+        parsed = urlparse(url)
+        port = parsed.port or (80 if parsed.scheme == "http" else 443)
+        return parsed.hostname, port
 
 
 class IllumioInputParameters(PCEConnectionConfig):
@@ -76,11 +94,12 @@ class Supercluster(PolicyComputeEngine):
     def __init__(self, pce: PolicyComputeEngine, pce_status: List[dict]):
         """PolicyComputeEngine subclass representing an Illumio Supercluster.
 
-        Inherits from an existing PCE instance and checks the PCE status
-        endpoint to determine if it is a Supercluster.
+        Inherits from an existing PCE instance and determines the Supercluster
+        leader and members based on the given status information.
 
-        Raises:
-            Exception: if a non-Supercluster PCE instance is provided.
+        Args:
+            pce (PolicyComputeEngine): PCE API client to wrap.
+            pce_status (List[dict]): PCE /health endpoint status response.
         """
         self.leader = ""
         self.members = []
@@ -98,7 +117,7 @@ class Supercluster(PolicyComputeEngine):
         pce.__class__ = cls
         return pce
 
-    def get_workloads(self) -> List[Workload]:
+    def get_workloads(self) -> List[dict]:
         """Retrieves workloads from all Supercluster members.
 
         VEN uptime and last_heartbeat_at metadata is not replicated across the
@@ -113,8 +132,9 @@ class Supercluster(PolicyComputeEngine):
                 both fail.
 
         Returns:
-            List[Workload]: workloads retrieved from the Supercluster.
+            List[dict]: workloads retrieved from the Supercluster.
         """
+        _configured_hostname = self._hostname
         endpoint = self.workloads._build_endpoint(None, None)
 
         try:
@@ -131,6 +151,7 @@ class Supercluster(PolicyComputeEngine):
                 mw_map[workload["href"]] = workload
         except Exception:
             # if we can't connect to the leader, fall back on the configured FQDN
+            self._hostname = _configured_hostname
             resp = self.get_collection(endpoint, include_org=False)
             return resp.json()
 
@@ -172,7 +193,6 @@ def connect_to_pce(config: PCEConnectionConfig) -> PolicyComputeEngine:
         pce.set_credentials(config.api_key_id, config.api_secret)
         pce.set_tls_settings(verify=config.self_signed_cert_path or True)
         pce.set_proxies(http_proxy=config.http_proxy, https_proxy=config.https_proxy)
-        # TODO: support configurable retry params
 
         pce.must_connect()
 
@@ -241,6 +261,50 @@ def parse_label_scope(scope: str) -> dict:
     return labels
 
 
+def getprotobynum(proto_num: int) -> str:
+    """Looks up protocol name based on its IANA number.
+
+    Follows the socket lib naming convention.
+
+    Args:
+        proto_num (int): the protocol IANA number.
+
+    Raises:
+        ValueError: if the protocol name can't be identified.
+
+    Returns:
+        str: the protocol name.
+    """
+    if proto_num == -1:  # special case: -1 indicates all services
+        return "all"
+    for name, num in vars(socket).items():
+        if name.startswith("IPPROTO") and proto_num == num:
+            return name[8:].lower()
+    raise ValueError(f"Couldn't find name for protocol number: {proto_num}")
+
+
+def service_port_to_string(service_port: dict) -> str:
+    """Converts service port range object dict to string.
+
+    {
+        "port": 443,
+        "proto": 6
+    }
+
+    will be converted to "443 TCP"
+
+    Args:
+        service (dict): the port range object.
+
+    Returns:
+        str: string representation of the port range.
+    """
+    proto = getprotobynum(service_port["proto"])
+    port_range = f"{service_port.get('port', '')}-{service_port.get('to_port', '')}"
+
+    return f"{port_range.strip('-')} {proto}".strip()
+
+
 __all__ = [
     "PCEConnectionConfig",
     "IllumioInputParameters",
@@ -248,4 +312,6 @@ __all__ = [
     "connect_to_pce",
     "is_supercluster",
     "parse_label_scope",
+    "getprotobynum",
+    "service_port_to_string",
 ]
