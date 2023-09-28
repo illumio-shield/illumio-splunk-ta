@@ -305,6 +305,19 @@ def service_port_to_string(service_port: dict) -> str:
     return f"{port_range.strip('-')} {proto}".strip()
 
 
+def flatten_refs(o: dict, *keys: str):
+    """Flattens HREF objects for specified keys in the given object.
+
+    Takes any number of additional string arguments as keys to flatten.
+
+    Args:
+        o (dict): object to flatten.
+    """
+    for k in keys:
+        if k in o and type(o[k]) is dict:
+            o[k] = href_from(o[k])
+
+
 def flatten_ingress_services(services: List[dict]) -> List[str]:
     """Flattens the given ingress service entries into a string list.
 
@@ -486,6 +499,8 @@ def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
     Returns:
         List[dict]: IP list entries flattened from the given object.
     """
+    # start by flattening the created_by/updated_by HREF objects for each entry
+    flatten_refs(ip_list, "created_by", "updated_by")
     ip_list_entries = []
 
     # strip the FQDN descriptions and flatten them as an array of strings
@@ -515,6 +530,8 @@ def flatten_service(service: dict, pce_fqdn: str) -> List[dict]:
     Returns:
         List[dict]: service entries flattened from the given object.
     """
+    # start by flattening the created_by/updated_by HREF objects for each entry
+    flatten_refs(service, "created_by", "updated_by")
     service_entries = []
 
     service_ports = service.pop("service_ports", [])
@@ -557,6 +574,7 @@ __all__ = [
     "parse_label_scope",
     "getprotobynum",
     "service_port_to_string",
+    "flatten_refs",
     "flatten_ingress_services",
     "flatten_scope",
     "flatten_rules",

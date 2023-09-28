@@ -358,7 +358,8 @@ class Illumio(Script):
         """
         port_scan_settings = params.port_scan_details()
         port_scan_settings["pce_fqdn"] = params.pce_fqdn
-        port_scan_settings["org_id"] = params.org_id
+        # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
+        port_scan_settings["org_id"] = str(params.org_id)
         port_scan_settings["_key"] = f"{params.pce_fqdn}:{params.org_id}"
         self._update_kvstore(KVSTORE_PORT_SCAN, [port_scan_settings])
 
@@ -375,6 +376,9 @@ class Illumio(Script):
         endpoint = pce.labels._build_endpoint(ACTIVE, None)
         response = pce.get_collection(endpoint, include_org=False)
         labels = response.json()
+
+        for label in labels:
+            flatten_refs(label, "created_by", "updated_by")
 
         update_set = self._kvstore_union(KVSTORE_LABELS, params, labels)
         self._update_kvstore(KVSTORE_LABELS, update_set)
@@ -400,6 +404,9 @@ class Illumio(Script):
         flattened_ip_lists = []
 
         for ip_list in ip_lists:
+            flatten_refs(ip_list, "created_by", "updated_by")
+
+            # convert IP list into multiple entries, one for each IP range
             flattened_ip_lists += flatten_ip_list(ip_list, params.pce_fqdn)
 
         update_set = self._kvstore_union(KVSTORE_IP_LISTS, params, flattened_ip_lists)
@@ -427,6 +434,9 @@ class Illumio(Script):
         flattened_services = []
 
         for service in services:
+            flatten_refs(service, "created_by", "updated_by")
+
+            # convert service into multiple entries, one for each service definition
             flattened_services += flatten_service(service, params.pce_fqdn)
 
         update_set = self._kvstore_union(KVSTORE_SERVICES, params, flattened_services)
@@ -456,6 +466,10 @@ class Illumio(Script):
         interfaces = []
 
         for workload in workloads:
+            # we discard the cluster name here, but can always add a lookup for
+            # container clusters later
+            flatten_refs(workload, "created_by", "updated_by", "container_cluster")
+
             # add convenience field indicating managed/unmanaged
             workload["managed"] = workload.get("ven") is not None
 
@@ -467,6 +481,7 @@ class Illumio(Script):
             # < pce_fqdn:workload_href:interface_name:interface_address >
             workload_href = workload["href"]
             for intf in workload.pop("interfaces", []):
+                flatten_refs(intf, "network")
                 key = f"{params.pce_fqdn}:{workload_href}:{intf['name']}:{intf['address']}"
                 interfaces.append({**intf, "workload_href": workload_href, "_key": key})
 
@@ -497,9 +512,12 @@ class Illumio(Script):
         rules = []
 
         for rule_set in rule_sets:
+            flatten_refs(rule_set, "created_by", "updated_by")
+
             scopes = {}
             for i, scope in enumerate(rule_set.get("scopes", [])):
                 scopes[i] = flatten_scope(scope)
+
             rules += flatten_rules(rule_set)
 
         update_set = self._kvstore_union(KVSTORE_RULE_SETS, params, rule_sets)
@@ -528,8 +546,8 @@ class Illumio(Script):
         kvstore = kvstores[name]
         old = kvstore.data.query(query={"pce_fqdn": params.pce_fqdn, "org_id": params.org_id})
 
-        # additional fields to append to all objects in the set
-        fields = {"pce_fqdn": params.pce_fqdn, "org_id": params.org_id, "deleted": False}
+        # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
+        fields = {"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id), "deleted": False}
 
         # build an index of all objects in the KVStore and mark them as deleted
         idx = {o["_key"]: {**o, "deleted": True} for o in old}
