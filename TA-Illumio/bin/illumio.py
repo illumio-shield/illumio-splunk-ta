@@ -245,8 +245,8 @@ class Illumio(Script):
         if params.allowed_ips:
             import ipaddress
 
-            for ip in params.allowed_ips.split(","):
-                ipaddress.ip_address(ip.strip())
+            for ip in params.allowed_ips:
+                ipaddress.ip_address(ip)
 
     def stream_events(self, inputs: InputDefinition, ew: EventWriter):
         """Modular input entry point.
