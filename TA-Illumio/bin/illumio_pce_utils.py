@@ -464,6 +464,7 @@ def flatten_rules(rule_set: dict) -> List[dict]:
         for rule in rule_set.pop(rule_type, []):
             rule["type"] = rule_type
             rule["rule_set_href"] = rule_set["href"]
+            rule["rule_set_name"] = rule_set["name"]
             # rules and deny rules share the same attributes
             rule["ingress_services"] = flatten_ingress_services(rule.get("ingress_services", []))
             rule["egress_services"] = [href_from(s) for s in rule.get("egress_services", [])]
