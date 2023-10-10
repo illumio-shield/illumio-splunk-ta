@@ -21,6 +21,9 @@ KVSTORE_WORKLOADS = "illumio_workloads"
 KVSTORE_WORKLOAD_INTERFACES = "illumio_workload_interfaces"
 KVSTORE_PORT_SCAN = "illumio_port_scan_settings"
 
+# KVStore limits
+KVSTORE_BATCH_DEFAULT = 1000
+
 # illumio types
 ILO_TYPE_IP_LISTS = "illumio:pce:ip_lists"
 ILO_TYPE_LABELS = "illumio:pce:labels"

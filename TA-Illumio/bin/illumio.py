@@ -576,7 +576,18 @@ class Illumio(Script):
             return  # no need to do anything if the collection is empty
         kvstores = self.service.kvstore
         kvstore = kvstores[name]
-        kvstore.data.batch_save(*objs)
+
+        # try to get the limits.conf/kvstore max batch size, falling back on
+        # the Splunk default (1000 up until 9.1.0 when it was changed to 50000)
+        try:
+            kvstore_conf = self.service.confs["limits"]["kvstore"]
+            batch_size = int(kvstore_conf["max_documents_per_batch_save"])
+        except Exception:
+            batch_size = KVSTORE_BATCH_DEFAULT
+
+        while objs:
+            kvstore.data.batch_save(*objs[:batch_size])
+            objs = objs[batch_size:]
 
     def _get_password(self, name: str) -> str:
         """Retrieves a password from the Splunk storage/passwords endpoint.
