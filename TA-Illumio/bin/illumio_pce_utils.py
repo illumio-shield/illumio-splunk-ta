@@ -9,8 +9,12 @@ License:
 """
 import re
 import socket
+import sys
+from pathlib import Path
 from typing import List
 from urllib.parse import urlparse, quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from illumio import PolicyComputeEngine, href_from
 
@@ -276,6 +280,8 @@ def getprotobynum(proto_num: int) -> str:
     Returns:
         str: the protocol name.
     """
+    if proto_num is None:
+        return ""
     if proto_num == -1:  # special case: -1 indicates all services
         return "all"
     for name, num in vars(socket).items():
@@ -429,7 +435,7 @@ def flatten_scope(scope: List[dict]) -> dict:
         key = "exclusions" if dimension.pop("exclusion", False) else "inclusions"
 
         if "actors" in dimension:
-            flattened_actors[key] = dimension["actors"]
+            flattened_actors[key] = flattened_actors.get(key, []) + [dimension["actors"]]
             continue
 
         for k in dimension.keys():
