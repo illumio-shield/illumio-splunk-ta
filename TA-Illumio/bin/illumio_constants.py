@@ -10,6 +10,7 @@ License:
 # sourcetypes
 SYSLOG_SOURCETYPE = "illumio:pce"
 HEALTH_SOURCETYPE = "illumio:pce:health"
+QUARANTINE_ACTION_SOURCETYPE = "illumio:pce:quarantine"
 
 # KVStore names
 KVSTORE_IP_LISTS = "illumio_ip_lists"
@@ -30,3 +31,9 @@ ILO_TYPE_LABELS = "illumio:pce:labels"
 ILO_TYPE_RULE_SETS = "illumio:pce:rule_sets"
 ILO_TYPE_SERVICES = "illumio:pce:services"
 ILO_TYPE_WORKLOADS = "illumio:pce:workloads"
+
+# CAM constants
+QUARANTINE_ACTION_NAME = "illumio_quarantine"
+QUARANTINE_ACTION_ROLE = "illumio_quarantine_workload"
+SUCCESS_STATUS = "success"
+FAILURE_STATUS = "failure"

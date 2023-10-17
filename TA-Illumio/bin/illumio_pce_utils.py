@@ -73,6 +73,7 @@ class IllumioInputParameters(PCEConnectionConfig):
         self.enable_tcp_ssl = kwargs.get("enable_tcp_ssl", True)
         self.port_scan_interval = int(kwargs.get("port_scan_interval") or 0)
         self.port_scan_threshold = int(kwargs.get("port_scan_threshold") or 0)
+        self.quarantine_labels = kwargs.get("quarantine_labels")
         allowed_ips = kwargs.get("allowed_ips") or ""
         self.allowed_ips = [ip.strip() for ip in allowed_ips.split(",")]
         super().__init__(**kwargs)

@@ -15,7 +15,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import List, Any
+from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
@@ -34,6 +34,7 @@ from splunklib.modularinput import (
 
 from illumio_constants import *
 from illumio_pce_utils import *
+from illumio_splunk_utils import *
 
 
 class Illumio(Script):
@@ -191,6 +192,17 @@ class Illumio(Script):
             )
         )
 
+        scheme.add_argument(
+            Argument(
+                name="quarantine_labels",
+                title="Quarantine Labels",
+                description="Labels to apply to workloads to put them into a quarantine zone. Must be of the form key1:value1,...,keyN:valueN",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
         return scheme
 
     def validate_input(self, definition: ValidationDefinition) -> None:
@@ -224,10 +236,17 @@ class Illumio(Script):
             except Exception:
                 raise ValueError("Port Number must be an integer between 1 and 65535")
 
-            tcp_input = self._get_tcp_input(port_number)
+            tcp_input = get_tcp_input(self.service, port_number)
 
             if tcp_input and tcp_input.sourcetype != SYSLOG_SOURCETYPE:
                 raise ValueError(f"Port Number: {str(port_number)} TCP is already in use")
+
+        quarantine_labels = definition.parameters.get("quarantine_labels")
+        if quarantine_labels:
+            try:
+                parse_label_scope(quarantine_labels)
+            except ValueError as e:
+                raise ValueError(f"Quarantine Labels: {e}")
 
         params = IllumioInputParameters(name=definition.metadata["name"], **definition.parameters)
         # lower the timeout and retry count for validation; Splunk will
@@ -237,7 +256,7 @@ class Illumio(Script):
 
         # the API secret is stored in storage/passwords on the front-end,
         # so we need to fetch it to validate the PCE connection
-        params.api_secret = self._get_password(params.api_secret_name)
+        params.api_secret = get_password(self.service, params.api_secret_name)
 
         # test the connection to the PCE
         connect_to_pce(params)
@@ -270,11 +289,11 @@ class Illumio(Script):
 
                 if params.port_number and params.port_number > 0:
                     # create the /tcp/raw input for the configured port if it doesn't exist
-                    if self._get_tcp_input(params.port_number) is None:
-                        self._create_tcp_input(app_name, params)
+                    if get_tcp_input(self.service, params.port_number) is None:
+                        create_tcp_input(self.service, app_name, params)
 
                 # retrieve the API secret from storage/passwords
-                params.api_secret = self._get_password(params.api_secret_name)
+                params.api_secret = get_password(self.service, params.api_secret_name)
 
                 pce = connect_to_pce(params)
 
@@ -312,12 +331,12 @@ class Illumio(Script):
                 ew.log(EventWriter.ERROR, f"Error while running Illumio PCE input: {e}")
                 ew.log(EventWriter.ERROR, f"Traceback: {traceback.format_exc()}")
 
-    def _pce_event(self, params: IllumioInputParameters, sourcetype: str = SYSLOG_SOURCETYPE, **kwargs) -> Event:
+    def _pce_event(self, params: IllumioInputParameters, sourcetype: str, **kwargs) -> Event:
         """Wraps the given metadata in an Event object.
 
         Args:
             params (IllumioInputParameters): input parameter data object.
-            sourcetype (str, optional): event sourcetype. Defaults to SYSLOG_SOURCETYPE.
+            sourcetype (str, optional): event sourcetype.
 
         Returns:
             Event: the constructed Event object.
@@ -343,6 +362,7 @@ class Illumio(Script):
         """
         return self._pce_event(
             params=params,
+            sourcetype=SYSLOG_SOURCETYPE,
             pce_fqdn=params.pce_fqdn,
             org_id=params.org_id,
             illumio_type=type_,
@@ -361,7 +381,7 @@ class Illumio(Script):
         # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
         port_scan_settings["org_id"] = str(params.org_id)
         port_scan_settings["_key"] = f"{params.pce_fqdn}:{params.org_id}"
-        self._update_kvstore(KVSTORE_PORT_SCAN, [port_scan_settings])
+        update_kvstore(self.service, KVSTORE_PORT_SCAN, [port_scan_settings])
 
     def _store_labels(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
         """Fetches labels from the PCE and stores them in a KVStore.
@@ -381,7 +401,7 @@ class Illumio(Script):
             flatten_refs(label, "created_by", "updated_by")
 
         update_set = self._kvstore_union(KVSTORE_LABELS, params, labels)
-        self._update_kvstore(KVSTORE_LABELS, update_set)
+        update_kvstore(self.service, KVSTORE_LABELS, update_set)
 
         return self._metadata_event(params, ILO_TYPE_LABELS, len(labels))
 
@@ -410,7 +430,7 @@ class Illumio(Script):
             flattened_ip_lists += flatten_ip_list(ip_list, params.pce_fqdn)
 
         update_set = self._kvstore_union(KVSTORE_IP_LISTS, params, flattened_ip_lists)
-        self._update_kvstore(KVSTORE_IP_LISTS, update_set)
+        update_kvstore(self.service, KVSTORE_IP_LISTS, update_set)
 
         return self._metadata_event(params, ILO_TYPE_IP_LISTS, len(ip_lists))
 
@@ -440,7 +460,7 @@ class Illumio(Script):
             flattened_services += flatten_service(service, params.pce_fqdn)
 
         update_set = self._kvstore_union(KVSTORE_SERVICES, params, flattened_services)
-        self._update_kvstore(KVSTORE_SERVICES, update_set)
+        update_kvstore(self.service, KVSTORE_SERVICES, update_set)
 
         return self._metadata_event(params, ILO_TYPE_SERVICES, len(services))
 
@@ -486,10 +506,10 @@ class Illumio(Script):
                 interfaces.append({**intf, "workload_href": workload_href, "_key": key})
 
         update_set = self._kvstore_union(KVSTORE_WORKLOADS, params, workloads)
-        self._update_kvstore(KVSTORE_WORKLOADS, update_set)
+        update_kvstore(self.service, KVSTORE_WORKLOADS, update_set)
 
         update_set = self._kvstore_union(KVSTORE_WORKLOAD_INTERFACES, params, interfaces)
-        self._update_kvstore(KVSTORE_WORKLOAD_INTERFACES, update_set)
+        update_kvstore(self.service, KVSTORE_WORKLOAD_INTERFACES, update_set)
 
         return self._metadata_event(params, ILO_TYPE_WORKLOADS, len(workloads))
 
@@ -517,14 +537,15 @@ class Illumio(Script):
             scopes = {}
             for i, scope in enumerate(rule_set.get("scopes", [])):
                 scopes[i] = flatten_scope(scope)
+            rule_set["scopes"] = scopes
 
             rules += flatten_rules(rule_set)
 
         update_set = self._kvstore_union(KVSTORE_RULE_SETS, params, rule_sets)
-        self._update_kvstore(KVSTORE_RULE_SETS, update_set)
+        update_kvstore(self.service, KVSTORE_RULE_SETS, update_set)
 
         update_set = self._kvstore_union(KVSTORE_RULES, params, rules)
-        self._update_kvstore(KVSTORE_RULES, update_set)
+        update_kvstore(self.service, KVSTORE_RULES, update_set)
 
         return self._metadata_event(params, ILO_TYPE_RULE_SETS, len(rule_sets))
 
@@ -558,88 +579,6 @@ class Illumio(Script):
             idx[key] = {**o, **fields, "_key": key}
 
         return list(idx.values())
-
-    def _update_kvstore(self, name: str, objs: List[dict]) -> None:
-        """Updates a specified KVStore with the given PCE objects.
-
-        Any existing KVStore data is removed and replaced to avoid stale state.
-
-        Args:
-            name (str): the name of the KVStore to update.
-            params (IllumioInputParameters): input parameter data object.
-            objs (List[dict]): list of objects to save to the store.
-
-        Raises:
-            KeyError: if the specified KVStore doesn't exist.
-        """
-        if not objs:
-            return  # no need to do anything if the collection is empty
-        kvstores = self.service.kvstore
-        kvstore = kvstores[name]
-
-        # try to get the limits.conf/kvstore max batch size, falling back on
-        # the Splunk default (1000 up until 9.1.0 when it was changed to 50000)
-        try:
-            kvstore_conf = self.service.confs["limits"]["kvstore"]
-            batch_size = int(kvstore_conf["max_documents_per_batch_save"])
-        except Exception:
-            batch_size = KVSTORE_BATCH_DEFAULT
-
-        while objs:
-            kvstore.data.batch_save(*objs[:batch_size])
-            objs = objs[batch_size:]
-
-    def _get_password(self, name: str) -> str:
-        """Retrieves a password from the Splunk storage/passwords endpoint.
-
-        Args:
-            name (str): the full stanza name of the password to retrieve.
-
-        Returns:
-            str: the plaintext password.
-        """
-        try:
-            storage_passwords = self.service.storage_passwords
-            resp = storage_passwords.get(name, output_mode="json")
-
-            with resp.body as response_body:
-                entries = json.loads(response_body.read())["entry"]
-                return entries[0]["content"]["clear_password"]
-        except Exception as e:
-            raise Exception(f"Failed to retrieve password {name} from storage/passwords: {e}")
-
-    def _get_tcp_input(self, port_number: int) -> Any:
-        """Retrieves a TCP input for the given syslog port from Splunk.
-
-        Returns:
-            Any: the Input object, or None if the input is not defined.
-        """
-        try:
-            return self.service.inputs[(str(port_number), "tcp")]
-        except Exception:
-            return None
-
-    def _create_tcp_input(self, app: str, params: IllumioInputParameters) -> None:
-        """Creates a TCP input in the given app using the provided parameters.
-
-        Args:
-            app (str): the app to create the input in.
-            params (IllumioInputParameters): input parameters.
-        """
-        stanza_type = "tcp-ssl" if params.enable_tcp_ssl else "tcp"
-
-        # we can't use service.inputs here as it doesn't support tcp-ssl.
-        # tcp inputs have an SSL property, but it's poorly documented and
-        # not clear if it has the same effect
-        self.service.post(
-            client.PATH_CONF % "inputs",
-            name=f"{stanza_type}://{params.port_number}",
-            app=app,
-            connection_host="dns",
-            index=params.index,
-            sourcetype=SYSLOG_SOURCETYPE,
-            disabled=0,
-        )
 
 
 if __name__ == "__main__":

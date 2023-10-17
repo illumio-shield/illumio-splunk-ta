@@ -1,22 +1,21 @@
-[markquarantine]
+[illumio_quarantine]
+
 param._cam = <json>
-	* Json specification for classifying response actions.
-    * Used in AR.
-    * For more information refer Appendix A of Splunk_SA_CIM.
-    * Defaults to None.
+    * JSON specification for specifying response actions.
+    * For more information, refer to Appendix A of the Splunk_SA_CIM app.
 
-param.workload_uuid = <string>
-	* Field defines workload_uuid in Illumio
-	* Defaults to "workload_uuid from Incident"
+param.workload_href = <string>
+    * HREF of the workload to quarantine.
+    * Required.
+    * Must be of the form "/orgs/<org_id>/workloads/<UUID>"
 
-param.host = <string>
-	* Field defines host in Illumio
-	* Defaults to "host from Incident"
+param.pce_fqdn = <string>
+    * PCE fully-qualified domain name.
+    * Required.
+    * Must correspond to the PCE domain name configured for an illumio modular input.
 
-param.orig_host = <string>
-	* Field defines orig_host in Illumio
-	* Defaults to "orig_host from Incident"
-
-param.fqdn = <string>
-	* Field defines fqdn in Illumio
-	* Defaults to "fqdn from Incident"
+param.org_id = <int>
+    * PCE organization ID to identify the PCE tenant.
+    * Required.
+    * Must be an integer >= 1, and must correspond to the org ID configured for an illumio modular input.
+    * Defaults to 1.

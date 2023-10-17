@@ -27,21 +27,31 @@
       <key name="prefix">illumio://</key>
       <key name="keyExampleText">Illumio API key username. Example value: 'api_145a5c788e63c30a3'</key>
     </element>
-    <element name="port_number" label="Syslog Port (TCP)">
-      <view name="list"/>
+    <element name="tcp_settings" type="fieldset">
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
-    </element>
-    <element name="enable_tcp_ssl" type="checkbox" label="Enable TCP-SSL">
-      <view name="create"/>
-      <key name="exampleText">Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf</key>
+      <key name="legend">TCP Syslog Settings</key>
+      <key name="helpText">Settings for receiving TCP syslogs from on-prem PCE installations.
+If a TCP input with the configured port does not exist, one will be created. If the input already exists, this setting will have no effect</key>
+      <elements>
+        <element name="port_number" label="Syslog Port (TCP)">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
+        </element>
+        <element name="enable_tcp_ssl" type="checkbox">
+          <view name="create"/>
+          <key name="topLabel">Enable TCP-SSL</key>
+          <key name="exampleText">Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf</key>
+        </element>
+      </elements>
     </element>
     <element name="port_scan_settings" type="fieldset">
       <view name="edit"/>
       <view name="create"/>
       <key name="legend">Port Scan Settings</key>
-      <key name="helpText">The following settings provide per-PCE configuration for detecting port scan events on paired workloads</key>
+      <key name="helpText">Per-PCE configuration settings for detecting port scan events on paired workloads</key>
       <elements>
         <element name="port_scan_interval" label="Interval">
           <view name="list"/>
@@ -63,6 +73,11 @@
         </element>
       </elements>
     </element>
+    <element name="quarantine_labels" label="Quarantine Labels">
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Labels to apply to workloads to put them into a quarantine zone. Must be of the form key1:value1,...,keyN:valueN. Example value: env:E-Quarantine</key>
+    </element>
     <element name="spl-ctrl_EnableAdvanced" type="checkbox" label="More settings" class="spl-mgr-advanced-switch">
       <view name="edit"/>
       <view name="create"/>
@@ -82,7 +97,7 @@
         <element name="self_signed_cert_path" label="Custom (self-signed) Certificate Path">
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Optional path for a custom root certificate, e.g. '$SPLUNK_HOME/etc/apps/TA-Illumio/bin/cert.pem'</key>
+          <key name="exampleText">Optional path for a custom root certificate, e.g. '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/cert.pem'</key>
         </element>
         <element name="http_proxy" label="HTTP Proxy">
           <view name="edit"/>
@@ -113,20 +128,20 @@
             <element name="interval" type="textfield" label="Interval">
               <view name="edit"/>
               <view name="create"/>
-              <key name="exampleText">Period between making API calls</key>
+              <key name="exampleText">Input run schedule in seconds or as a cron expression</key>
             </element>
           </elements>
         </element>
         <element name="host" type="textfield" label="Host">
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Set the host with this value</key>
+          <key name="exampleText">Override for the default host value (PCE FQDN)</key>
         </element>
         <element name="index" type="select" label="Index">
           <view name="list"/>
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Set the destination index for this source</key>
+          <key name="exampleText">Destination index for this input</key>
           <key name="dynamicOptions" type="dict">
             <key name="keyName">title</key>
             <key name="keyValue">title</key>
@@ -144,7 +159,7 @@
         <element name="__ns" type="select" label="Destination app">
           <view name="create"/>
           <view name="edit"/>
-          <key name="exampleText">Set the destination app namespace for this source</key>
+          <key name="exampleText">Destination app namespace for this input</key>
           <key name="hideUnlessFieldSet">hiddenField</key>
           <key name="exampleText">
               <![CDATA[ <script type="text/javascript">
