@@ -30,7 +30,7 @@ class PCEConnectionConfig:
         self.api_key_id = kwargs.get("api_key_id")
         self.api_secret = kwargs.get("api_secret")
         self.org_id = int(kwargs.get("org_id") or 1)
-        self.self_signed_cert_path = kwargs.get("self_signed_cert_path")
+        self.ca_cert_path = kwargs.get("ca_cert_path")
         self.http_proxy = kwargs.get("http_proxy")
         self.https_proxy = kwargs.get("https_proxy")
         self.http_retry_count = int(kwargs.get("http_retry_count") or 5)
@@ -75,7 +75,7 @@ class IllumioInputParameters(PCEConnectionConfig):
         self.port_scan_threshold = int(kwargs.get("port_scan_threshold") or 0)
         self.quarantine_labels = kwargs.get("quarantine_labels")
         allowed_ips = kwargs.get("allowed_ips") or ""
-        self.allowed_ips = [ip.strip() for ip in allowed_ips.split(",")]
+        self.allowed_ips = [ip.strip() for ip in allowed_ips.split(",") if ip.strip()]
         super().__init__(**kwargs)
 
     @property
@@ -197,7 +197,7 @@ def connect_to_pce(config: PCEConnectionConfig) -> PolicyComputeEngine:
             request_timeout=config.http_request_timeout,
         )
         pce.set_credentials(config.api_key_id, config.api_secret)
-        pce.set_tls_settings(verify=config.self_signed_cert_path or True)
+        pce.set_tls_settings(verify=config.ca_cert_path or True)
         pce.set_proxies(http_proxy=config.http_proxy, https_proxy=config.https_proxy)
 
         pce.must_connect()

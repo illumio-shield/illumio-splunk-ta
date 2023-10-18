@@ -139,9 +139,9 @@ class Illumio(Script):
 
         scheme.add_argument(
             Argument(
-                name="self_signed_cert_path",
-                title="Self-Signed Certificate Path",
-                description="Path for the custom root certificate. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/bin/cert.pem'",
+                name="ca_cert_path",
+                title="CA Certificate Path",
+                description="Optional path to a custom CA certificate bundle. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/ca.pem'",
                 data_type=Argument.data_type_string,
                 required_on_create=False,
                 required_on_edit=False,
@@ -265,7 +265,11 @@ class Illumio(Script):
             import ipaddress
 
             for ip in params.allowed_ips:
-                ipaddress.ip_address(ip)
+                try:
+                    if ip:
+                        ipaddress.ip_address(ip)
+                except ValueError as e:
+                    raise ValueError(f"Allowed IPs: {e}")
 
     def stream_events(self, inputs: InputDefinition, ew: EventWriter):
         """Modular input entry point.
