@@ -7,8 +7,8 @@ Copyright:
 License:
     Apache2, see LICENSE for more details.
 """
+import csv
 import re
-import socket
 import sys
 from pathlib import Path
 from typing import List
@@ -18,7 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from illumio import PolicyComputeEngine, href_from
 
+from splunklib.searchcommands import Boolean
+
 REALM = "illumio://"
+LOOKUPS_DIR = Path(__file__).resolve().parent.parent / "lookups"
+# cache the proto lookup after reading it the first time
+IANA_PROTO_LOOKUP = {}
 
 
 class PCEConnectionConfig:
@@ -70,7 +75,7 @@ class IllumioInputParameters(PCEConnectionConfig):
         self.source = kwargs.get("source")
         self.sourcetype = kwargs.get("sourcetype")
         self.port_number = int(kwargs.get("port_number") or -1)
-        self.enable_tcp_ssl = kwargs.get("enable_tcp_ssl", True)
+        self.enable_tcp_ssl = Boolean()(kwargs.get("enable_tcp_ssl", True))
         self.port_scan_interval = int(kwargs.get("port_scan_interval") or 0)
         self.port_scan_threshold = int(kwargs.get("port_scan_threshold") or 0)
         self.quarantine_labels = kwargs.get("quarantine_labels")
@@ -144,7 +149,8 @@ class Supercluster(PolicyComputeEngine):
         endpoint = self.workloads._build_endpoint(None, None)
 
         try:
-            self._hostname = self.leader
+            if self.leader:
+                self._hostname = self.leader
 
             # start by getting all workloads from the leader. this way, if a member
             # cluster is down we still get the workload metadata even if we're
@@ -207,34 +213,6 @@ def connect_to_pce(config: PCEConnectionConfig) -> PolicyComputeEngine:
         raise Exception(f"Failed to connect to PCE: {e}")
 
 
-def is_supercluster(pce_status: List[dict]) -> bool:
-    """Checks if the given PCE status response describes a Supercluster.
-
-    Args:
-        pce_status (List[dict]): PCE status response object.
-
-    Returns:
-        bool: True if the PCE is a Supercluster, otherwise False.
-    """
-    if len(pce_status) < 2:
-        return False
-
-    leader = None
-    members = []
-
-    for cluster in pce_status:
-        cluster_type = cluster.get("type")
-
-        if cluster_type == "leader":
-            if leader is not None:
-                return False
-            leader = cluster["fqdn"]
-        elif cluster_type == "member":
-            members.append(cluster["fqdn"])
-
-    return leader is not None and len(members) > 0
-
-
 def parse_label_scope(scope: str) -> dict:
     """Parse label scopes passed as a string of the form k1:v1,k2:v2,...
 
@@ -270,25 +248,21 @@ def parse_label_scope(scope: str) -> dict:
 def getprotobynum(proto_num: int) -> str:
     """Looks up protocol name based on its IANA number.
 
-    Follows the socket lib naming convention.
+    Uses lookups/protocol_numbers.csv to build the lookup.
 
     Args:
         proto_num (int): the protocol IANA number.
 
-    Raises:
-        ValueError: if the protocol name can't be identified.
-
     Returns:
-        str: the protocol name.
+        str: the protocol name, or "unknown" if the
     """
+    global IANA_PROTO_LOOKUP
     if proto_num is None:
         return ""
-    if proto_num == -1:  # special case: -1 indicates all services
-        return "all"
-    for name, num in vars(socket).items():
-        if name.startswith("IPPROTO") and proto_num == num:
-            return name[8:].lower()
-    raise ValueError(f"Couldn't find name for protocol number: {proto_num}")
+    if not IANA_PROTO_LOOKUP:
+        with open(str(LOOKUPS_DIR / "protocol_numbers.csv"), "r") as f:
+            IANA_PROTO_LOOKUP = dict(csv.reader(f))
+    return IANA_PROTO_LOOKUP.get(proto_num, "unknown").lower()
 
 
 def service_port_to_string(service_port: dict) -> str:
@@ -512,14 +486,21 @@ def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
     flatten_refs(ip_list, "created_by", "updated_by")
     ip_list_entries = []
 
-    # strip the FQDN descriptions and flatten them as an array of strings
-    ip_list["fqdns"] = [fqdn["fqdn"] for fqdn in ip_list.pop("fqdns", [])]
+    ip_ranges = ip_list.pop("ip_ranges", [])
+    fqdns = ip_list.pop("fqdns", [])
 
-    for ip_range in ip_list.pop("ip_ranges", []):
-        key = f"{pce_fqdn}:{ip_list['href']}:{ip_range.get('from_ip')}:{ip_range.get('to_ip')}"
-        # rename the IP range description field
-        ip_range["ip_range_description"] = ip_range.get("description")
-        ip_list_entries.append({**ip_list, **ip_range, "_key": key})
+    for entry in ip_ranges + fqdns:
+        # construct a unique key suffix for each IP list entry
+        entry_key = ":".join([
+            quote(str(k), safe="") for k in (
+                entry.get("from_ip"),
+                entry.get("to_ip"),
+                entry.get("fqdn"),
+            ) if k
+        ])
+        key = f"{pce_fqdn}:{ip_list['href']}:{entry_key}"
+        entry["entry_description"] = entry.pop("description", None)
+        ip_list_entries.append({**ip_list, **entry, "_key": key})
 
     return ip_list_entries
 
@@ -579,7 +560,6 @@ __all__ = [
     "IllumioInputParameters",
     "Supercluster",
     "connect_to_pce",
-    "is_supercluster",
     "parse_label_scope",
     "getprotobynum",
     "service_port_to_string",

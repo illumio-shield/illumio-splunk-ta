@@ -234,7 +234,7 @@ class Illumio(Script):
             try:
                 validate_int(port_number, minimum=1, maximum=PORT_MAX)
             except Exception:
-                raise ValueError("Port Number must be an integer between 1 and 65535")
+                raise ValueError("Port Number: must be an integer between 1 and 65535")
 
             tcp_input = get_tcp_input(self.service, port_number)
 

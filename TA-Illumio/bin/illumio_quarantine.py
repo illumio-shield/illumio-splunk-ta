@@ -91,6 +91,8 @@ class IllumioQuarantineAction(ModularAction):
         """Connects to the PCE and updates the given workload's labels to put it in Quarantine"""
         pce = connect_to_pce(self.params)
         labels = self._get_label_hrefs(pce)
+        if not labels:
+            raise Exception("no Quarantine labels provided")
         pce.workloads.update(self.workload_href, {"labels": [{"href": l} for l in labels]})
 
         msg = f'Workload "{self.workload_href}" successfully quarantined'
