@@ -1,4 +1,5 @@
 proto,name
+-1,all
 0,hopopt
 1,icmp
 2,igmp
