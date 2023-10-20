@@ -13,7 +13,7 @@
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Full URL of the PCE (or Supercluster leader) to connect to, including port. Example value: https://my.pce.com:8443</key>
+      <key name="exampleText">Full URL of the PCE to connect to, including port. Example value: https://my.pce.com:8443</key>
     </element>
     <element name="org_id" label="Organization ID">
       <view name="list"/>
@@ -94,10 +94,10 @@ If a TCP input with the configured port does not exist, one will be created. If 
       <view name="edit"/>
       <view name="create"/>
       <elements>
-        <element name="self_signed_cert_path" label="Custom (self-signed) Certificate Path">
+        <element name="ca_cert_path" label="CA Certificate Path">
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Optional path for a custom root certificate, e.g. '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/cert.pem'</key>
+          <key name="exampleText">Optional path to a custom CA certificate bundle. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/ca.pem'</key>
         </element>
         <element name="http_proxy" label="HTTP Proxy">
           <view name="edit"/>
@@ -131,11 +131,6 @@ If a TCP input with the configured port does not exist, one will be created. If 
               <key name="exampleText">Input run schedule in seconds or as a cron expression</key>
             </element>
           </elements>
-        </element>
-        <element name="host" type="textfield" label="Host">
-          <view name="edit"/>
-          <view name="create"/>
-          <key name="exampleText">Override for the default host value (PCE FQDN)</key>
         </element>
         <element name="index" type="select" label="Index">
           <view name="list"/>
