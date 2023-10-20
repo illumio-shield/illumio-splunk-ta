@@ -49,7 +49,7 @@ quarantine_labels = <value>
     * Must be of the form key1:value1,...,keyN:valueN
     * Keys and values are case-sensitive.
 
-self_signed_cert_path = <value>
+ca_cert_path = <value>
     * Optional self-signed CA PEM file to use when connecting to the PCE.
 
 http_proxy = <value>
