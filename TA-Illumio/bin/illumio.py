@@ -569,7 +569,7 @@ class Illumio(Script):
         """
         kvstores = self.service.kvstore
         kvstore = kvstores[name]
-        old = kvstore.data.query(query={"pce_fqdn": params.pce_fqdn, "org_id": params.org_id})
+        old = kvstore.data.query(query={"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id)})
 
         # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
         fields = {"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id), "deleted": False}
