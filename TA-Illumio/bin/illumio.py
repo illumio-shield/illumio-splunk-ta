@@ -285,11 +285,12 @@ class Illumio(Script):
             # variables are not allowed, so pop it out of the dict here
             app_name = input_item.pop("__app")
             params = IllumioInputParameters(name=input_name, **input_item)
+            log_prefix = f"{app_name}/{params.stanza} -"
 
             try:
                 # set app context for the Splunk REST client
                 self.service.namespace.app = app_name
-                ew.log(EventWriter.INFO, f"Running input {app_name}/{params.stanza}")
+                ew.log(EventWriter.INFO, f"{log_prefix} Running input")
 
                 if params.port_number and params.port_number > 0:
                     # create the /tcp/raw input for the configured port if it doesn't exist
@@ -302,7 +303,7 @@ class Illumio(Script):
                 pce = connect_to_pce(params)
 
                 # write an event containing port scan details
-                ew.log(EventWriter.INFO, "Writing port scan settings to KVStore")
+                ew.log(EventWriter.INFO, f"{log_prefix} Writing port scan settings to KVStore")
                 self._store_port_scan_settings(params)
 
                 # get PCE status and store each cluster in the response as a separate event
@@ -313,7 +314,7 @@ class Illumio(Script):
 
                 for cluster in pce_status:
                     ew.write_event(self._pce_event(params, HEALTH_SOURCETYPE, **cluster))
-                ew.log(EventWriter.INFO, f"Retrieved {params.pce_fqdn} PCE cluster status")
+                ew.log(EventWriter.INFO, f"{log_prefix} Retrieved {params.pce_fqdn} PCE status")
 
                 # the PCE object isn't thread-safe, so create a second instance
                 # here as we will need to reassign the internal _hostname value
@@ -332,8 +333,8 @@ class Illumio(Script):
                     for future in as_completed(futures):
                         ew.write_event(future.result())
             except Exception as e:
-                ew.log(EventWriter.ERROR, f"Error while running Illumio PCE input: {e}")
-                ew.log(EventWriter.ERROR, f"Traceback: {traceback.format_exc()}")
+                ew.log(EventWriter.ERROR, f"{log_prefix} Error running Illumio input: {e}")
+                ew.log(EventWriter.ERROR, f"{log_prefix} Traceback: {traceback.format_exc()}")
 
     def _pce_event(self, params: IllumioInputParameters, sourcetype: str, **kwargs) -> Event:
         """Wraps the given metadata in an Event object.
