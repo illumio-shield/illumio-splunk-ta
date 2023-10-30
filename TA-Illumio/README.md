@@ -41,13 +41,15 @@ The Illumio Add-on for Splunk integrates with the Illumio Policy Compute Engine 
 
 The `TA-Illumio` add-on can be installed in either a standalone or distributed Splunk environment.  
 
-> **NOTE:** Recommendations for the configuration and topology of a distributed Splunk environment are outside the scope of this document. See the documentation on [Splunk Validated Architectures](https://docs.splunk.com/Documentation/SVA/current/Architectures/Introduction) for suggestions on topology for distributed deployments.  
+> [!NOTE]
+> Recommendations for the configuration and topology of a distributed Splunk environment are outside the scope of this document. See the documentation on [Splunk Validated Architectures](https://docs.splunk.com/Documentation/SVA/current/Architectures/Introduction) for suggestions on topology for distributed deployments.  
 
 * For a standalone deployment, install and configure the TA as described in the [Installation](#installation) section below.  
 
 * For a distributed environment, install the TA to a Splunk Heavy Forwarder.  
 
-> **NOTE:** The `TA-Illumio` add-on cannot be installed on a Universal Forwarder.  
+> [!IMPORTANT]
+> The `TA-Illumio` add-on cannot be installed on a Universal Forwarder.  
 
 ## Installation  
 
@@ -99,11 +101,13 @@ To create a Service Account API key:
 1. In the PCE, open the **Access** submenu on the left side of the screen and select **Service Accounts**
 2. Click **Add**. Enter a display name and one or more Roles to assign to the key. The `TA-Illumio` add-on requires readonly access to policy object endpoints, so the **Global Viewer** role should be sufficient
 
-> **NOTE:** To use the [workload quarantine action](#workload-quarantine-action), the API key used for the input must have write permission for workloads.  
+> [!NOTE]
+> To use the [workload quarantine action](#workload-quarantine-action), the API key used for the input must have write permission for workloads.  
 
 3. Click **Save**. Copy or download the API key credentials and store them somewhere secure
 
-!> **NOTE:** Service Account API keys have a default lifetime of 90 days - take note of the expiry date for your key and replace it before it expires to avoid disruption.
+> [!WARNING]
+> Service Account API keys have a default lifetime of 90 days - take note of the expiry date for your key and replace it before it expires to avoid disruption.
 
 **Setting up the Illumio modular input**  
 
@@ -132,7 +136,8 @@ sslPassword = splunk_server_cert_pass
 ```
 2. Restart Splunk
 
-!> **NOTE:** Do NOT use the Splunk default certificates when configuring SSL.
+> [!WARNING]
+> Do NOT use the Splunk default certificates when configuring SSL.
 
 **Configuring Syslog Forwarding for On-Prem PCEs**  
 
@@ -143,7 +148,8 @@ sslPassword = splunk_server_cert_pass
 5. Enter a description for the repository and the Splunk hostname/IP and the port value of the TCP stanza created for the `Illumio` input. Leave the protocol value as **TCP**
 6. If TCP-SSL is configured in Splunk for the target port, set the TLS field to **Enabled** and upload a certificate bundle containing the root and any intermediate certificates in the chain for your CA
 
-> **NOTE:** If enabling TLS, the address value must match the CN or SAN of the Splunk server certificate  
+> [!NOTE]
+> If enabling TLS, the address value must match the CN or SAN of the Splunk server certificate  
 
 7. Select the **Verify TLS** option to ensure that your certificates and TLS configuration are valid
 8. Click **Add** and select the radio button option for the created repository
@@ -235,7 +241,8 @@ The action takes the following parameters:
 
 When triggered, the alert action script looks up the modular input matching the given `pce_fqdn` and `org_id` and uses the configured PCE connection details when updating the specified workload.  
 
-!> **NOTE:** for the action to run successfully, the API key configured for the input MUST have write permission for workloads.  
+> [!IMPORTANT]
+> For the action to run successfully, the API key configured for the input MUST have write permission for workloads.  
 
 **Manually Run the Action**  
 
