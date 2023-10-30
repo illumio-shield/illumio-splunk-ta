@@ -90,6 +90,17 @@ class IllumioQuarantineAction(ModularAction):
     def dowork(self):
         """Connects to the PCE and updates the given workload's labels to put it in Quarantine"""
         pce = connect_to_pce(self.params)
+
+        # XXX: support for supercluster - we need to write to the SC leader, so
+        # use the Supercluster wrapper and reassign the internal hostname if
+        # the /health response indicates this is an SC
+        resp = pce.get("/health", include_org=False)
+        resp.raise_for_status()
+
+        pce = Supercluster(pce, resp.json())
+        if pce.leader:
+            pce._hostname = pce.leader
+
         labels = self._get_label_hrefs(pce)
         if not labels:
             raise Exception("no Quarantine labels provided")
