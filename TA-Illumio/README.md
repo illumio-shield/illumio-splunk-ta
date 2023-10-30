@@ -259,6 +259,10 @@ The following search can be run from the Splunk UI to quarantine the workload wi
 * Service Account keys have a default expiration of 90 days - make sure to rotate them before expiration
 * For some versions of the PCE (21.5) some API endpoints may return a 403 despite the Service Account key having the necessary permissions - when seeing 403 errors in the TA logs, create a new key or use a User-scoped API key instead
 
+**Supercluster**
+
+* The `illumio_*` metadata collections set the **pce_fqdn** field value to be the domain name of the PCE referenced in the input configuration. This could lead to these metadata objects having different **pce_fqdn** values from syslog events pushed by individual SC members
+
 ## Troubleshooting  
 
 When encountering an issue with the TA, start by checking the TA logs in `splunkd.log`. This can be done by running the following search in the Splunk UI:  
@@ -371,39 +375,61 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ### Version 4.0.0  
 
-* **Python 2.7 is no longer supported**
-    * The TA now supports python v3.7+
-* Updated PCE and Splunk versions supported
-* Removed the following fields from the modular input spec:
-    * **private_ip**
-    * **hostname**
-    * **api_secret** - writing the API secret to `passwords.conf` now happens via the Splunk REST API when saving the input
-    * **enabled** - inputs can be enabled or disabled from the Splunk UI or by setting the **disabled** field
-* The `illumio.conf` custom configuration file has been removed
+> [!IMPORTANT]
+> Due to this change, the serch-time extractions and transforms for version 4.0.0 are incompatible with data indexed by previous versions of the TA. See the [v4.0.0 upgrade steps](#v323-to-v400) above for more detailed instructions for upgrading from an earlier version.
+
+**New Features**
+
+* Added support for label types beyond the default RAEL dimensions
+    * Static RAEL field extractions have been removed
+* The TA now seamlessly supports inputs for multiple PCEs as well as multiple organizations within the same PCE cluster
 * Added support for HTTP proxy values when connecting to the PCE
 * Added retry and timeout values for the PCE connection
 * Added flag to specify `[tcp]` or `[tcp-ssl]` when creating a new TCP stanza for receiving syslog events
+* System health and PCE status events are now filtered under the new **illumio:pce:health** sourcetype
+
+**Improvements**
+
+* **Syslog prefixes are stripped at index-time for JSON-formatted events**
+    * These events now use JSON KV mode
+    * The **json_data** field has been removed
+* The TA now supports CIM v5.x
+* Updated PCE and Splunk versions supported
 * Updated to the latest version of the Splunk SDK for python
-* Added support for label types beyond the default RAEL dimensions
-    * Fixed RAEL field extractions have been removed
+* Illumio PCE Superclusters are treated the same as any other PCEs for configuration purposes. The input URL may point to a top-level Supercluster FQDN, leader PCE, or member PCE
+* The `markquarantine` alert action has been renamed `illumio_quarantine`, and can now be configured with any number of label dimensions
+    * The **Quarantine Labels** parameter in the `Illumio` input accepts a list of label key:value pairs that form the quarantine policy scope on the PCE. See the [workload quarantine action](#workload-quarantine-action) section above for details
+
+**Removed Features**
+
+* **Python 2.7 is no longer supported**
+    * The TA now supports python v3.7+
+* Removed the following fields from the modular input spec:
+    * **private_ip** - vestigial field with no functionality in 3.x
+    * **hostname** - no longer necessary due to Supercluster changes
+    * **api_secret** - writing the API secret to `passwords.conf` now happens via the Splunk REST API when saving the input
+    * **enabled** - inputs can be enabled or disabled from the Splunk UI or by setting the **disabled** field
+* The `illumio.conf` custom configuration file has been removed
+    * This file previously stored HREF values for quarantine labels, but is no longer needed
 * Removed the following files from `TA-Illumio/bin`:
     * `IllumioUtil.py` - replaced with `illumio_pce_utils.py` and `illumio_splunk_utils.py`
     * `get_data.py` - the TA now uses the [`illumio`](https://pypi.org/project/illumio/) python library for the PCE API client
     * `lib/` and `splunklib/` - python libs have been moved under `TA-Illumio/lib`
     * `markquarantine.py` - renamed `illumio_quarantine.py` as the `markquarantine` action has been renamed `illumio_quarantine`
 * Removed the **illumio:pce:metadata** and **illumio:pce:ps_details** sourcetypes
-* **Illumio IP list, Label, Service, and Workload objects are no longer indexed as events**
-    * Indexing these static objects as events was expensive and could lead to confusing search results
-    * Instead, these objects are added KV stores which are updated on each run of the TA
-    * Configuration for the KV stores can be found in `collections.conf`
-    * **NOTE:** by default, KV store replication is **disabled** for these object stores. It is up to the Splunk administrators to determine if replication is necessary for their environments, and override the local collections.conf with `replicate = true`
-* Similarly, port scan details are written to the **illumio_port_scan_settings** collection rather than being indexed as events
+    * **Illumio IP list, Label, Service, and Workload objects are no longer indexed as events**
+    * Indexing these static objects as events was expensive and could lead to confusing search results. Instead, these objects are added KV stores which are updated on each run of the TA
+    > [!NOTE] 
+    > By default, KV store replication is **disabled** for these object stores. It is up to the Splunk administrators to determine if replication is necessary for their environments, and override the local collections.conf with `replicate = true`
+    * Similarly, port scan details are written to the **illumio_port_scan_settings** collection rather than being indexed as events
 * The `$SPLUNK_HOME/var/log/TA-Illumio` log directory has been removed. TA logs are now sent to `splunkd.log` per Splunk best practices for modular inputs
-* Illumio PCE Superclusters are treated the same as any other PCEs for configuration purposes. The input URL may point to a top-level Supercluster FQDN, leader PCE, or member PCE
-* **Syslog prefixes are stripped at index-time for JSON-formatted events**
-    * These events now use JSON KV mode
-    * The **json_data** field has been removed
-* System health and PCE status events are now filtered under the new **illumio:pce:health** sourcetype
+* The following field extractions have been removed:
+    * **json_data** - no longer relevant with stripped syslog prefixes & JSON KV mode
+    * **workload_href**, **agent_href**, **created_href** - where relevant, replaced with CIM field **object_id**
+    * **pce_hostname** - superceded by **pce_fqdn**
+    * **created_hostname**, **workloads_affected_after**, **changes_labels_deleted** - convenience extractions that are no longer used. If needed, these values are simple to extract manually at search-time using the **spath** command
+    * **src_role_label**, **src_app_label**, **src_env_label**, **src_loc_label** - replaced with **src_label_pairs**
+    * **dest_role_label**, **dest_app_label**, **dest_env_label**, **dest_loc_label** - replaced with **dest_label_pairs**
 
 ### Version 3.2.3  
 
