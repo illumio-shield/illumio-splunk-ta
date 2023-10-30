@@ -375,8 +375,9 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ### Version 4.0.0  
 
+* **Syslog prefixes are stripped at index-time for JSON-formatted events**
 > [!IMPORTANT]
-> Due to this change, the serch-time extractions and transforms for version 4.0.0 are incompatible with data indexed by previous versions of the TA. See the [v4.0.0 upgrade steps](#v323-to-v400) above for more detailed instructions for upgrading from an earlier version.
+> Due to this change, the search-time extractions and transforms for version 4.0.0 are incompatible with data indexed by previous versions of the TA. See the [v4.0.0 upgrade steps](#v323-to-v400) above for more detailed instructions for upgrading from an earlier version.
 
 **New Features**
 
@@ -390,9 +391,6 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 **Improvements**
 
-* **Syslog prefixes are stripped at index-time for JSON-formatted events**
-    * These events now use JSON KV mode
-    * The **json_data** field has been removed
 * The TA now supports CIM v5.x
 * Updated PCE and Splunk versions supported
 * Updated to the latest version of the Splunk SDK for python
