@@ -16,26 +16,26 @@
 
 ## Overview  
 
-The Illumio Add-on for Splunk integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.
+The [Illumio Add-on for Splunk]((https://splunkbase.splunk.com/app/3657)) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.
 
-* **Version:** 4.0.0
+### Version - 4.0.0  
 
-* **Supported Splunk versions:**  
-    * 8.1.x
-    * 8.2.x
-    * 9.0.x
-    * 9.1.x
+**Supported Splunk versions**  
+* 8.1.x
+* 8.2.x
+* 9.0.x
+* 9.1.x
 
-* **Supported versions of the Illumio Policy Compute Engine (PCE):**  
-    * 21.5.x
-    * 22.2.x
-    * 22.5.x
-    * 23.2.x
-    * Illumio SaaS PCE (latest)
+**Supported versions of the Illumio Policy Compute Engine (PCE)**  
+* 21.5.x
+* 22.2.x
+* 22.5.x
+* 23.2.x
+* Illumio SaaS PCE (latest)
 
-* **Supported Splunk Common Information Model (CIM) versions:**  
-    * 4.x
-    * 5.x
+**Supported Splunk Common Information Model (CIM) versions**  
+* 4.x
+* 5.x
 
 ## Splunk Architecture  
 
@@ -56,7 +56,7 @@ The `TA-Illumio` add-on can be installed in either a standalone or distributed S
 **Splunk UI**  
 
 1. In the Splunk UI, navigate to the "Manage Apps" page via the Apps drop-down in the top-left, or by clicking the Gear icon next to "Apps" on the Splunk homepage
-2. Cilck the **Browse More Apps** button, and search for `IllumioAppForSplunk`
+2. Click the **Browse More Apps** button, and search for `TA-Illumio`
 3. Click **Install**
 4. Enter your Splunk login credentials when prompted, then click **Agree and Install**
 5. When prompted, restart Splunk
@@ -68,15 +68,15 @@ The `TA-Illumio` add-on can be installed in either a standalone or distributed S
 3. Click **Download** 
 4. Read through and accept the EULA and Terms and Conditions, then click **Agree to Download**
 5. Transfer the downloaded `.tgz` or `.spl` file to the Splunk server
-6. Install the app manually
+6. Install the app manually:
 
-Using the Splunk binary:  
+using the Splunk binary  
 
 ```sh
 $SPLUNK_HOME/bin/splunk install app /path/to/TA-Illumio.spl
 ```
 
-OR extracting the app manually:  
+OR by extracting directly under `/apps`  
 
 ```sh
 tar zxf /path/to/TA-Illumio.spl -C $SPLUNK_HOME/etc/apps/
@@ -467,7 +467,7 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 * For Illumio Cloud data coming from S3, added support of JSON data format for illumio:pce and illumio:pce:collector source types
 * Added test script to check the connection with Illumio server
 
-### Version 2.0.2
+### Version 2.0.2  
 
 * Added support of Illumio PCE 18.2.1, 18.2.2, 18.2.3
 
@@ -486,7 +486,7 @@ See the EULA document on the [Illumio Integrations docs site](https://docs.illum
 
 ## Support  
 
-* Access questions and answers specific to Illumio App For Splunk at https://answers.splunk.com.
+* Access questions and answers specific to Illumio Add-On For Splunk at https://answers.splunk.com.
 * Support Offered: Yes
 * Support Email: app-integrations@illumio.com
 * Please visit https://answers.splunk.com, and ask your question regarding Illumio Add-on for Splunk. Please tag your question with the correct App Tag, and your question will be attended to.
