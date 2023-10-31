@@ -9,71 +9,74 @@
       <view name="list"/>
       <view name="create"/>
     </element>
-    <element name="pce_url" label="Supercluster Leader / PCE URL">
+    <element name="pce_url" label="PCE URL">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-    </element>
-    <element name="api_key_id" label="API Authentication Username"> 
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">e.g. 'api_1234567890'</key>
-    </element>
-    <element name="api_secret" type="password" label="API Secret">      
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">
-        <![CDATA[ <script type="text/javascript">
-            $(function() { $('label[for*="api_secret_id_confirm"]').html("Confirm API Secret")
-            });
-          </script> ]]>
-      </key>
-    </element>
-    <element name="port_number" label="Port Number for syslogs (TCP)">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514</key>
-    </element>
-    <element name="time_interval_port" label="Port Scan configuration: scan interval in seconds">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Interval during which the Port Scan Threshold is exceeded</key>
-    </element>
-    <element name="cnt_port_scan" label="Port Scan Configuration: Unique ports threshold">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Minimum number of ports scanned by a port-scan</key>
-    </element>
-    <element name="qurantine_label" label="Labels to quarantine workloads">
-      <view name="list"/>
-      <view name="edit"/>
-      <view name="create"/>
-      <key name="exampleText">Comma Separated list of three labels of type app, environment and location. </key>
+      <key name="exampleText">Full URL of the PCE to connect to, including port. Example value: https://my.pce.com:8443</key>
     </element>
     <element name="org_id" label="Organization ID">
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">This Org-ID will be used for making REST API calls to PCE.</key>
+      <key name="exampleText">PCE Organization ID</key>
     </element>
-    <element name="hostname" label="Hostname of PCE Nodes">
-      <view name="list"/>
+    <element name="api_key_storage" type="illumio_api_secret_storage" label="API Authentication Credentials">
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Comma Separated Hostnames of all the nodes managed by this PCE instance.</key>
+      <key name="prefix">illumio://</key>
+      <key name="keyExampleText">Illumio API key username. Example value: 'api_145a5c788e63c30a3'</key>
     </element>
-    <element name="enable_data_collection" type="select" label="Data Collection">
-      <view name="list"/>
+    <element name="tcp_settings" type="fieldset">
       <view name="edit"/>
       <view name="create"/>
-      <key name="dynamicOptions" type="dict"></key>
-      <options>
-        <opt value="Enabled" label="Enabled"/>
-        <opt value="Disabled" label="Disabled"/>
-      </options>
+      <key name="legend">TCP Syslog Settings</key>
+      <key name="helpText">Settings for receiving TCP syslogs from on-prem PCE installations.
+If a TCP input with the configured port does not exist, one will be created. If the input already exists, this setting will have no effect</key>
+      <elements>
+        <element name="port_number" label="Syslog Port (TCP)">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Port for Splunk to receive syslogs from the PCE. Not required syslogs are pulled from S3. Example value: 514</key>
+        </element>
+        <element name="enable_tcp_ssl" type="checkbox">
+          <view name="create"/>
+          <key name="topLabel">Enable TCP-SSL</key>
+          <key name="exampleText">Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf</key>
+        </element>
+      </elements>
+    </element>
+    <element name="port_scan_settings" type="fieldset">
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="legend">Port Scan Settings</key>
+      <key name="helpText">Per-PCE configuration settings for detecting port scan events on paired workloads</key>
+      <elements>
+        <element name="port_scan_interval" label="Interval">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">A port scan alert will be triggered if the scan threshold count is met during this interval (in seconds)</key>
+        </element>
+        <element name="port_scan_threshold" label="Threshold">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Number of scanned ports that triggers a port scan alert</key>
+        </element>
+        <element name="allowed_ips" label="Allowed IPs">
+          <view name="list"/>
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Comma-separated list of source IPs to be ignored by port scan alerts</key>
+        </element>
+      </elements>
+    </element>
+    <element name="quarantine_labels" label="Quarantine Labels">
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="exampleText">Labels to apply to workloads to put them into a quarantine zone. Must be of the form key1:value1,...,keyN:valueN. Example value: env:E-Quarantine</key>
     </element>
     <element name="spl-ctrl_EnableAdvanced" type="checkbox" label="More settings" class="spl-mgr-advanced-switch">
       <view name="edit"/>
@@ -91,6 +94,31 @@
       <view name="edit"/>
       <view name="create"/>
       <elements>
+        <element name="ca_cert_path" label="CA Certificate Path">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Optional path to a custom CA certificate bundle. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/ca.pem'</key>
+        </element>
+        <element name="http_proxy" label="HTTP Proxy">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Optional HTTP proxy address</key>
+        </element>
+        <element name="https_proxy" label="HTTPS Proxy">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Optional HTTPS proxy address</key>
+        </element>
+        <element name="http_retry_count" label="HTTP Retry Count">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Number of times to retry HTTP requests to the PCE</key>
+        </element>
+        <element name="http_request_timeout" label="HTTP Request Timeout">
+          <view name="edit"/>
+          <view name="create"/>
+          <key name="exampleText">Total HTTP request timeout (in seconds)</key>
+        </element>
         <element name="intervalFields" type="fieldset">
           <key name="legend"> </key>
           <view name="list"/>
@@ -100,20 +128,15 @@
             <element name="interval" type="textfield" label="Interval">
               <view name="edit"/>
               <view name="create"/>
-              <key name="exampleText">Period between making API calls</key>
+              <key name="exampleText">Input run schedule in seconds or as a cron expression</key>
             </element>
           </elements>
-        </element>
-        <element name="host" type="textfield" label="Host">
-          <view name="edit"/>
-          <view name="create"/>
-          <key name="exampleText">Set the host with this value.</key>
         </element>
         <element name="index" type="select" label="Index">
           <view name="list"/>
           <view name="edit"/>
           <view name="create"/>
-          <key name="exampleText">Set the destination index for this source.</key>
+          <key name="exampleText">Destination index for this input</key>
           <key name="dynamicOptions" type="dict">
             <key name="keyName">title</key>
             <key name="keyValue">title</key>
@@ -124,16 +147,23 @@
             </key>
           </key>
         </element>
-        <element name="self_signed_cert_path" label="Custom (self-signed) certificate path">      
-          <view name="edit"/>
+        <element name="hiddenField" type="hidden">
           <view name="create"/>
-          <key name="exampleText">Path for the custom root certificate</key>
+          <view name="edit"/>
         </element>
-        <element name="allowed_ip" label="Allowed port scanner Source IP addresses">
-          <view name="list"/>
-          <view name="edit"/>
+        <element name="__ns" type="select" label="Destination app">
           <view name="create"/>
-          <key name="exampleText">Comma Separated list of Source IPs, which will be ignored in Port scans</key>
+          <view name="edit"/>
+          <key name="exampleText">Destination app namespace for this input</key>
+          <key name="hideUnlessFieldSet">hiddenField</key>
+          <key name="exampleText">
+              <![CDATA[ <script type="text/javascript">
+                  $(function() { $('#__ns_id').val('TA-Illumio') });
+              </script> ]]>
+          </key>
+          <options>
+            <opt value="TA-Illumio" label="TA-Illumio"/>
+          </options>
         </element>
       </elements>
     </element>

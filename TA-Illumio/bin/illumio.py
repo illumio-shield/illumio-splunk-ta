@@ -1,708 +1,590 @@
-from __future__ import print_function
-from __future__ import absolute_import
+# -*- coding: utf-8 -*-
 
+"""This module provides the modular input for the Illumio TA.
+
+The input accesses the Illumio API and retrieves data from the PCE.
+
+Copyright:
+    © 2023 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
 import sys
-import xml.dom.minidom
-import xml.sax.saxutils
+import traceback
 import json
-import base64
-import re
-from threading import Thread
-import splunk.search as splunk_search
-from splunk.clilib import cli_common as cli
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+from typing import List
 
-import requests
-import splunk.rest
-import splunk.version as ver
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-version = float(re.search(r"(\d+.\d+)", ver.__version__).group(1))
+from illumio import PolicyComputeEngine, validate_int, PORT_MAX, ACTIVE
 
-try:
-    if version >= 6.4:
-        from splunk.clilib.bundle_paths import make_splunkhome_path
-    else:
-        from splunk.appserver.mrsparkle.lib.util import make_splunkhome_path
-except ImportError:
-    sys.exit(3)
+import splunklib.client as client
+from splunklib.modularinput import (
+    Script,
+    Scheme,
+    Argument,
+    EventWriter,
+    Event,
+    InputDefinition,
+    ValidationDefinition,
+)
 
-sys.path.append(make_splunkhome_path(["etc", "apps", "TA-Illumio", "bin", "lib"]))
-from future import standard_library
-from builtins import str
-from builtins import object
-standard_library.install_aliases()
-import urllib.request
-import urllib.parse
-import urllib.error
-from IllumioUtil import get_logger, writeconf
-from IllumioUtil import store_password
-from IllumioUtil import get_credentials
-from IllumioUtil import app_name
-from IllumioUtil import resource
-from IllumioUtil import check_label_exists
-from IllumioUtil import is_ip
-from IllumioUtil import is_hostname
-from get_data import get_label, get_workload, print_xml_stream, get_pce_health, get_ip_lists, get_services
-
-logger = get_logger("Illumio_MODINPUT")
+from illumio_constants import *
+from illumio_pce_utils import *
+from illumio_splunk_utils import *
 
 
-class Illumio(object):
+class Illumio(Script):
     """Illumio Modular Input."""
 
-    session_key = ""
-    mod_input_name = ""
-    api_secret = ""
-    api_key = ""
-    stanza_name = ""
-    pce_url = ""
-    cert_path = ""
-    enable_data_collection = 0
-    qurantine_label = ""
-    flag = {"enabled": 1, "disabled": 0, "1": 1, "0": 0}
-    config = {}
-    hostname = ""
-    org_id = 1
+    def get_scheme(self) -> Scheme:
+        """Writes the scheme for the modular input.
 
-    def __init__(self):
-        """Initialize environment."""
-        self.config = self.get_mod_input_configs()
-        self.session_key = self.config.get("session_key", "")
-        self.mod_input_name = self.config.get("name", "").split("://", 1)[1]
-        self.api_secret = self.config.get("api_secret", "")
-        self.api_key = self.config.get("api_key_id", "")
-        self.stanza_name = self.config.get("name", "")
-        self.pce_url = self.config.get("pce_url", "")
-        self.cert_path = self.config.get("self_signed_cert_path", "")
-        self.enable_data_collection = self.flag.get((self.config.get("enable_data_collection", "disabled").lower()), 0)
-        self.qurantine_label = self.config.get("qurantine_label", "")
-        self.config["protocol"] = self.config.get("protocol", "").lower()
-        self.allowed_ip = self.config.get("allowed_ip", "")
-        self.hostname = self.config.get("hostname", "")
-        self.org_id = self.config.get("org_id", 1)
-
-        if self.api_key and self.api_secret:
-
-            store_password(self.mod_input_name + "_secret", self.config["api_secret"], self.session_key)
-            store_password(self.mod_input_name + "_key", self.config["api_key_id"], self.session_key)
-
-            self.config["api_key_id"] = ""
-            self.config["api_secret"] = ""
-            input_config = self.config
-            self.update_mod_inputs(input_config)
-        else:
-            logger.debug("Scheduled Modular Input")
-            self.config["api_secret"] = get_credentials(self.mod_input_name + "_secret", self.session_key)
-            self.config["api_key_id"] = get_credentials(self.mod_input_name + "_key", self.session_key)
-            self.api_secret = self.config["api_secret"][1]
-            self.api_key = self.config["api_key_id"][1]
-
-    @staticmethod
-    def get_mod_input_configs():
-        """Return modular input configs."""
-        config = {}
-        try:
-            config_str = sys.stdin.read()
-            doc = xml.dom.minidom.parseString(config_str)
-            root = doc.documentElement
-            config["session_key"] = root.getElementsByTagName("session_key")[0].firstChild.data
-            conf_node = root.getElementsByTagName("configuration")[0]
-            conf_node_flag = False
-            stanza_flag = False
-            param = {}
-            if conf_node:
-                stanza = conf_node.getElementsByTagName("stanza")[0]
-                conf_node_flag = True
-            if conf_node_flag and stanza:
-                stanza_name = stanza.getAttribute("name")
-                stanza_flag = True
-            if stanza_flag and stanza_name:
-                config["name"] = stanza_name
-                params = stanza.getElementsByTagName("param")
-            for param in params:
-                param_name = param.getAttribute("name")
-                logger.debug("XML: found param '%s'" % param_name)
-                if param_name and param.firstChild and param.firstChild.nodeType == \
-                        param.firstChild.TEXT_NODE:
-                    data = param.firstChild.data
-                    config[param_name] = data
-                    if(param_name != "api_secret"):
-                        logger.debug("XML: '%s' -> '%s'" % (param_name, data))
-
-            checkpnt_node = root.getElementsByTagName("checkpoint_dir")[0]
-            if checkpnt_node and checkpnt_node.firstChild and checkpnt_node.firstChild.nodeType == \
-                    checkpnt_node.firstChild.TEXT_NODE:
-                config["checkpoint_dir"] = checkpnt_node.firstChild.data
-
-            if not config:
-                raise Exception("Invalid configuration received from Splunk.")
-
-                # just some validation: make sure these keys are present (required)
-            config["protocol"] = "tcp"
-            config["time_interval_port"] = config["time_interval_port"].split(".")[0]
-            config["cnt_port_scan"] = config["cnt_port_scan"].split(".")[0]
-
-        except Exception as e:
-            raise Exception("Error getting Splunk configuration via STDIN: %s" % str(e))
-
-        return config
-
-    def update_mod_inputs(self, config):
-        """Update modular inputs."""
-        path = urllib.parse.quote(self.mod_input_name, safe='')
-        try:
-            r = splunk.rest.simpleRequest("/data/inputs/illumio?search=" + path + "&output_mode=json",
-                                          self.session_key, method='GET', raiseAllErrors=True)
-
-            result_storage_password = json.loads(r[1])
-            if (200 <= int(r[0]["status"]) < 300) and (len(result_storage_password["entry"]) > 0):
-                for ele in result_storage_password["entry"]:
-                    if ele["name"] == self.mod_input_name:
-                        url = "/servicesNS/nobody/" + ele["acl"]["app"] + "/data/inputs/illumio/" + path
-
-                        try:
-                            interval = int(float(ele["content"]["interval"]))
-                        except Exception:
-                            interval = ele["content"]["interval"]
-                        post_param = {
-                            "api_secret": config["api_secret"],
-                            "api_key_id": config["api_key_id"],
-                            "cnt_port_scan": ele["content"]["cnt_port_scan"],
-                            "pce_url": ele["content"]["pce_url"],
-                            "interval": interval,
-                            "time_interval_port": int(ele["content"]["time_interval_port"].split(".")[0])
-                        }
-                        r = splunk.rest.simpleRequest(
-                            url, self.session_key,
-                            postargs=post_param,
-                            method='POST',
-                            raiseAllErrors=True)
-
-                        break
-
-        except Exception:
-            logger.exception("Error in updating modular inputs")
-            raise Exception
-
-    def rest_help(self):
-        """Rest helper."""
-        return [self.pce_url, self.api_key, self.api_secret, self.cert_path, self.org_id, self.session_key]
-
-    def print_ps_details(self):
-        """Print ps details."""
-        pce_url = self.pce_url
-        port_scan = self.config.get("cnt_port_scan", "")
-        interval = self.config.get("time_interval_port", "")
-        allowed_ip = self.config.get("allowed_ip", "")
-        if allowed_ip:
-            res = {
-                "pce_url": pce_url,
-                "port_scan": port_scan,
-                "interval": interval,
-                "illumio_type": "illumio:pce:ps_details",
-                "allowed_ip": allowed_ip
-            }
-        else:
-            res = {
-                "pce_url": pce_url,
-                "port_scan": port_scan,
-                "interval": interval,
-                "illumio_type": "illumio:pce:ps_details"
-            }
-        res = json.dumps(res)
-        print_xml_stream(res)
-
-
-SCHEME = r"""<scheme>
-    <title>Illumio</title>
-    <description>Enable data inputs for splunk add-on for Illumio</description>
-    <use_external_validation>true</use_external_validation>
-    <streaming_mode>xml</streaming_mode>
-
-    <endpoint>
-        <args>
-            <arg name="name">
-                <title>Name</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="pce_url">
-                <title>Supercluster Leader / PCE URL</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(match(pce_url, '^(https://)\S+'), "PCE URL: PCE URL must begin with 'https://'")
-                </validation>
-            </arg>
-            <arg name="api_key_id">
-                <title>API Authentication Username</title>
-                <description>e.g. 'api_1234567890'</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="api_secret">
-                <title>API Secret</title>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-            </arg>
-            <arg name="port_number">
-                <title>Port Number for syslogs (TCP)</title>
-                <description>Only required when receiving syslog directly. Not required when getting syslog from S3. Example value: 514</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="time_interval_port">
-                <title>Port Scan configuration: scan interval in seconds</title>
-                <description>Interval during which the Port Scan Threshold is exceeded</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(time_interval_port), "Time interval for syslog port scan: Time Interval must be non negative integer.")
-                </validation>
-            </arg>
-            <arg name="cnt_port_scan">
-                <title>Port Scan Configuration: Unique ports threshold</title>
-                <description>Minimum number of ports scanned by a port-scan</description>
-                <required_on_edit>true</required_on_edit>
-                <required_on_create>true</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(cnt_port_scan), "Count for port scan: must be non negative integer.")
-                </validation>
-            </arg>
-            <arg name="self_signed_cert_path">
-                <title>Certificate Path</title>
-                <description>Path for the custom root certificate</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="qurantine_label">
-                <title>Labels to quarantine workloads</title>
-                <description>Comma Separated list of three labels of type app, location and environment.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-                <validation>
-                    validate(match(qurantine_label, '(\S+,\S+,\S+)'), "Enter three labels of type app, env and loc")
-                </validation>
-            </arg>
-            <arg name="allowed_ip">
-                <title>Comma Separated list of Source IPs, which will be ignored in Port scans</title>
-                <description>Port scans from these Source IPs are ignored</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="private_ip">
-                <title>(This field is removed from UI but keeping it here to avoid error logs on upgrade) Private IP address of Illumio Nodes</title>
-                <description>Comma Separated IP address of all the nodes managed by this PCE instance.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="hostname">
-                <title>Hostnames of Illumio Nodes</title>
-                <description>Comma Separated Hostnames of all the nodes managed by this PCE instance.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="enable_data_collection">
-                <title>Data Collection</title>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-            </arg>
-            <arg name="org_id">
-                <title>Organization ID</title>
-                <description>This Org-ID will be used for making REST API calls to PCE.</description>
-                <required_on_edit>false</required_on_edit>
-                <required_on_create>false</required_on_create>
-                <validation>
-                    validate(is_nonneg_int(org_id), "Organization ID: Must be non-negative integer.")
-                </validation>
-            </arg>
-        </args>
-    </endpoint>
-</scheme>
-"""     # noqa: E501
-
-
-def do_scheme():
-    """Do scheme."""
-    print(SCHEME)
-
-
-def get_notification_message(message, session_key):
-    """Get notification message."""
-    postargs = {'severity': 'error', 'name': app_name,
-                'value': app_name + ' modular input validation failed: ' + message
-                }
-    try:
-        splunk.rest.simpleRequest('/services/messages', session_key,
-                                  postargs=postargs)
-    except Exception:
-        logger.exception("Failed to give notification message")
-
-
-def print_error(message, session_key):
-    """Print error message."""
-    get_notification_message(message, session_key)
-    print("<error><message>%s</message></error>" % xml.sax.saxutils.escape(message))
-    logger.error(message)
-    sys.exit(1)
-
-
-def syslog_port_status(protocol, port_number, mod_input_name, session_key):
-    """Load syslog port status."""
-    mod_input_name = mod_input_name.rstrip()
-
-    url = "/data/inputs/tcp/raw/?search=" + str(port_number) + "&&output_mode=json"
-
-    try:
-        r = splunk.rest.simpleRequest(
-            url,
-            sessionKey=session_key, method='GET', raiseAllErrors=True)
-    except Exception:
-        logger.exception("Unable to load all TCP endpoint in validate_arguments")
-        raise Exception
-
-    json_res = json.loads(r[1])
-
-    entries = json_res.get("entry", "")
-
-    for entry in entries:
-        source = entry.get("content", "")
-        if str(entry.get("name", "")) == str(port_number):
-            if source.get("sourcetype", "") == "illumio:pce":
-                return 1
-            else:
-                return 2
-    return 0
-
-
-def get_validation_data():
-    """Fetch configuration parameters as passed by Splunk as XML when executing this Modular Input."""
-    val_data = {}
-
-    val_str = sys.stdin.read()
-
-    doc = xml.dom.minidom.parseString(val_str)
-    root = doc.documentElement
-    val_data["session_key"] = root.getElementsByTagName("session_key")[0].firstChild.data
-    item_node = root.getElementsByTagName("item")[0]
-
-    if item_node:
-        name = item_node.getAttribute("name")
-        val_data["stanza"] = name
-
-        params_node = item_node.getElementsByTagName("param")
-        for param in params_node:
-            name = param.getAttribute("name")
-            logger.debug("Found param %s" % name)
-            if name and param.firstChild and param.firstChild.nodeType == param.firstChild.TEXT_NODE:
-                val_data[name] = param.firstChild.data
-
-    val_data["protocol"] = "tcp-ssl"
-    val_data["time_interval_port"] = val_data["time_interval_port"].split(".")[0]
-    val_data["cnt_port_scan"] = val_data["cnt_port_scan"].split(".")[0]
-
-    return val_data
-
-
-def validate_interval(interval, session_key):
-    """Validate Interval."""
-    try:
-        interval = int(float(interval))
-        if interval < 3600:
-            print_error(
-                "Interval: Enter a non negative interval greater than equal to 3600 seconds or a valid cron schedule",
-                session_key)
-    except Exception:
-        logger.debug("Interval: An cron expression was entered")
-
-
-def validate_pce_url(pce_url, session_key):
-    """Validate PCE Url."""
-    if not bool(re.search(r'^(https://)\S+', pce_url)):
-        print_error("PCE URL: PCE URL must begin with 'https://'", session_key)
-
-
-def validate_port_number(port_number, session_key):
-    """Validate Port Number."""
-    if port_number != "":
-        port_check_regex = r'^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-3][0-9]|6553[0-5])$'
-        if not bool(re.search(port_check_regex, port_number)):
-            print_error("Port Number: Invalid port number", session_key)
-
-
-def validate_time_interval_port(time_interval_port, session_key):
-    """Validate Time Interval Port."""
-    if int(time_interval_port) < 0:
-        print_error("Time interval for syslog port scan: Time Interval must be non negative integer", session_key)
-
-
-def validate_cnt_port_scan(cnt_port_scan, session_key):
-    """Validate CNT Port Scan."""
-    if int(cnt_port_scan) < 0:
-        print_error("Count for port scan: must be non negative integer.", session_key)
-
-
-def validate_port_status(port_status, protocol, port_number, session_key):
-    """Validate Port Status."""
-    if port_status == 2:
-        err_msg = str(protocol) + ": " + str(port_number) + " is not available as it is already in use."
-        print_error(err_msg, session_key)
-
-
-def validate_connection(pce_url, api_key_id, api_secret, cert_path, session_key):
-    """Validate the connection."""
-    url = pce_url + resource.get("api_version", "") + resource.get("product_version", "")
-    health_url = pce_url + resource.get("api_version", "")
-    auth = "Basic " + base64.b64encode(('%s:%s' % (api_key_id, api_secret)).encode()).decode().replace('\n', '')
-    headers = {"Authorization": auth, "Accept": "application/json"}
-
-    if cert_path == "":
-        cert_path = True
-
-    try:
-        r = requests.get(url, headers=headers, verify=cert_path, timeout=10)
-        if r.status_code == 401:
-            logger.debug(r.status_code)
-            print_error("Authentication failed: API key id and/or API Secret were incorrect.", session_key)
-        if r.status_code == 403:
-            logger.debug(r.status_code)
-            print_error(
-                "Authorization failed: user is not authorized, the incorrect Organization ID parameter was used.",
-                session_key)
-        if r.status_code != 200:
-            logger.debug(r.status_code)
-            print_error("Connection Failed.", session_key)
-        r = requests.get(health_url + resource.get("pce_health", ""), headers=headers, verify=cert_path)
-        if len(r.content):
-            events = json.loads(r.content)
-            if events[0].get("type") == "member":
-                logger.debug(
-                    "Supercluster Leader / PCE URL: Please enter supercluster leader PCE URL "
-                    "instead of supercluster member PCE URL.")
-                print_error(
-                    "Supercluster Leader / PCE URL: Please enter supercluster leader PCE URL "
-                    "instead of supercluster member PCE URL.", session_key)
-    except Exception as e:
-        print_error("Illumio Error: Error while validating credentials " + str(e), session_key)
-
-
-def validate_org_id(org_id, session_key):
-    """Validate organization id."""
-    if org_id < 0 and org_id % 1 != 0:
-        print_error("Organization ID: Invalid organization ID, Only non-negative integer allowed.", session_key)
-
-
-def validate_qurantine_label(qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key):
-    """Validate quarantine label."""
-    try:
-
+        Returns:
+            Scheme: the scheme for the modular input.
         """
-            To validate if user has entered correct labels of type app, loc and env.
-            It also adds this information into Illumio.conf file which is used for markQuarantine action.
+        scheme = Scheme("Illumio")
+        scheme.description = "Retrieves Illumio PCE objects and syslog data as Splunk events."
+
+        scheme.add_argument(
+            Argument(
+                name="pce_url",
+                title="PCE URL",
+                description="Full URL of the PCE (or Supercluster leader) to connect to, including port. Example value: https://my.pce.com:8443",
+                data_type=Argument.data_type_string,
+                required_on_create=True,
+                required_on_edit=True,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="org_id",
+                title="Organization ID",
+                description="PCE Organization ID",
+                data_type=Argument.data_type_number,
+                required_on_create=True,
+                required_on_edit=True,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="api_key_id",
+                title="API Authentication Username",
+                description="Illumio API key username. Example value: 'api_145a5c788e63c30a3'",
+                data_type=Argument.data_type_string,
+                required_on_create=True,
+                required_on_edit=True,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="port_number",
+                title="Syslog Port (TCP)",
+                description="Port for Splunk to receive traffic flows and events from the PCE. Not required if these events are being pulled from S3",
+                data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="enable_tcp_ssl",
+                title="Enable TCP-SSL",
+                description="Receive encrypted syslog events from the PCE. Requires [SSL] stanza to be configured in inputs.conf",
+                data_type=Argument.data_type_boolean,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="port_scan_interval",
+                title="Port Scan Interval",
+                description="A port scan alert will be triggered if the scan threshold count is met during this interval (in seconds)",
+                data_type=Argument.data_type_number,
+                required_on_create=True,
+                required_on_edit=True,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="port_scan_threshold",
+                title="Port Scan Threshold",
+                description="Number of scanned ports that triggers a port scan alert",
+                data_type=Argument.data_type_number,
+                required_on_create=True,
+                required_on_edit=True,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="allowed_ips",
+                title="Allowed Port Scan IPs",
+                description="Comma-separated list of device IPs to be ignored by port scan alerts",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="ca_cert_path",
+                title="CA Certificate Path",
+                description="Optional path to a custom CA certificate bundle. Example value: '$SPLUNK_HOME/etc/apps/TA-Illumio/certs/ca.pem'",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="http_proxy",
+                title="HTTP Proxy",
+                description="Optional HTTP proxy address",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="https_proxy",
+                title="HTTPS Proxy",
+                description="Optional HTTPS proxy address",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="http_retry_count",
+                title="HTTP Retry Count",
+                description="Number of times to retry HTTP requests to the PCE",
+                data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="http_request_timeout",
+                title="HTTP Request Timeout",
+                description="Total HTTP request timeout (in seconds)",
+                data_type=Argument.data_type_number,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        scheme.add_argument(
+            Argument(
+                name="quarantine_labels",
+                title="Quarantine Labels",
+                description="Labels to apply to workloads to put them into a quarantine zone. Must be of the form key1:value1,...,keyN:valueN",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
+        return scheme
+
+    def validate_input(self, definition: ValidationDefinition) -> None:
+        """Validate arguments of the Illumio modular input.
+
+        Args:
+            definition: The validation definition containing input params.
+
+        Raises:
+            ValueError: If any input params are invalid.
         """
-        if not qurantine_label:
-            writeconf("TA-Illumio", session_key, "illumio", pce_url, {"app": "", "env": "", "loc": ""})
-            return
-
-        labels = qurantine_label.split(",")
-        if len(labels) == 3:
-
-            app_label = check_label_exists(pce_url, labels[0], "app", api_key_id, api_secret, org_id)
-            if app_label:
-                app_label = app_label + ":" + labels[0]
-            else:
-                print_error("First label should be of type app. ", session_key)
-
-            env_label = check_label_exists(pce_url, labels[1], "env", api_key_id, api_secret, org_id)
-            if env_label:
-                env_label = env_label + ":" + labels[1]
-            else:
-                print_error("Second label should be of type env. ", session_key)
-
-            loc_label = check_label_exists(pce_url, labels[2], "loc", api_key_id, api_secret, org_id)
-
-            if loc_label:
-                loc_label = loc_label + ":" + labels[2]
-            else:
-                print_error("Third label should be of type loc. ", session_key)
-
-            if app_label and env_label and loc_label:
-                writeconf(
-                    "TA-Illumio",
-                    session_key,
-                    "illumio",
-                    pce_url,
-                    {"app": app_label, "env": env_label, "loc": loc_label})
-        else:
-            print_error("One label each of type app,env and loc are required. ", session_key)
-
-    except Exception:
-        logger.exception("Error in Validating Label")
-
-
-def validate_hostname(hostname, pce_url, session_key):
-    """Validate Hostname."""
-    if hostname:
-        try:
-            hostname_list = hostname.split(",")
-            for host_name in hostname_list:
-                if not is_hostname(host_name):
-                    print_error("Invalid value for Hostname", session_key)
-
-            search_query = "| makeresults  | eval hostname=\"" + hostname + "\", fqdn=\"" + re.match(r"https?:\/\/([a-zA-Z0-9.\-_~]*):?", pce_url).group(1) + "\" | makemv delim=\",\" hostname | mvexpand hostname | append [| inputlookup illumio_host_details_lookup] | dedup fqdn hostname | eval _key = hostname +\"_\"+ fqdn | table _key hostname fqdn | outputlookup illumio_host_details_lookup"    # noqa: E501
-
-            splunk_search.searchAll(
-                search_query, earliest_time="-60m", latest_time="+5m", sessionKey=session_key,
-                namespace="IllumioAppforSplunk")
-
-        except Exception:
-            logger.exception("Error in Validating Hostname")
-
-
-def validate_allowed_ip(allowed_ip, session_key):
-    """
-    Validate allowed_ip field. If the value is not valid than error message is displayed.
-
-    Arguments:
-        allowed_ip {string} -- list of Allowed port scanner IP addresses
-        session_key {type} -- Session Key
-    """
-    if allowed_ip:
-        try:
-            for ip in allowed_ip.strip().split(","):
-                if not is_ip(ip):
-                    print_error(
-                        "Please enter comma separated valid Allowed port scanner Source IP addresses.",
-                        session_key)
-        except Exception:
-            logger.exception("Error in Validating Allowed port scanner Source IP addresses")
-
-
-def validate_arguments():
-    """
-    Validate different input arguments of Modular Input page.
-
-    If the value is invalid, appropriate message is displayed on screen.
-    """
-    val_data = get_validation_data()
-
-    api_key_id = val_data.get("api_key_id", "")
-    api_secret = val_data.get("api_secret", "")
-    pce_url = val_data.get("pce_url", "")
-    session_key = val_data.get("session_key", "")
-    protocol = val_data.get("protocol", "").lower()
-    port_number = val_data.get("port_number", "")
-    mod_input_name = val_data.get("stanza", "")
-    cert_path = val_data.get("self_signed_cert_path", "")
-    time_interval_port = val_data.get("time_interval_port", "")
-    cnt_port_scan = val_data.get("cnt_port_scan", "")
-    interval = val_data.get("interval", "")
-    qurantine_label = val_data.get("qurantine_label", "")
-    hostname = val_data.get("hostname", "")
-    org_id = int(val_data.get("org_id", 1))
-    allowed_ip = val_data.get("allowed_ip", "")
-
-    stanza = protocol + "://" + str(port_number)
-
-    if api_key_id and api_secret:
-
-        validate_pce_url(pce_url, session_key)
-        validate_port_number(port_number, session_key)
-        validate_time_interval_port(time_interval_port, session_key)
-        validate_cnt_port_scan(cnt_port_scan, session_key)
-        validate_org_id(org_id, session_key)
-        validate_interval(interval, session_key)
-        validate_allowed_ip(allowed_ip, session_key)
-
-        validate_connection(pce_url, api_key_id, api_secret, cert_path, session_key)
-
-        if port_number != "":
-            port_status = syslog_port_status(protocol, port_number, mod_input_name, session_key)
-
-            validate_port_status(port_status, protocol, port_number, session_key)
-
-            if port_status == 0:
-                inputdata = {"index": [val_data.get("index", "")],
-                             "sourcetype": ["illumio:pce"],
-                             "source": ["syslog-" + mod_input_name],
-                             "disabled": ["false"],
-                             "name": stanza}
-
+        for arg in self.get_scheme().arguments:
+            if arg.name == "port_number":
+                continue  # validated separately below
+            if arg.data_type == Argument.data_type_number:
                 try:
-                    splunk.rest.simpleRequest(
-                        "/servicesNS/nobody/" + app_name + "/configs/conf-inputs",
-                        session_key, postargs=inputdata, method='POST', raiseAllErrors=True)
+                    param = definition.parameters.get(arg.name)
+                    if param is not None and str(param) != "":
+                        validate_int(definition.parameters[arg.name], minimum=1)
                 except Exception:
-                    logger.exception("Unable to create input")
-                    raise Exception
+                    raise ValueError(f"{arg.title} must be a non-negative integer")
 
-                try:
-                    splunk.rest.simpleRequest(
-                        "/admin/raw/_reload",
-                        session_key, method='POST', raiseAllErrors=True)
-                except Exception:
-                    logger.exception("Unable to reload TCP endpoint")
+        # the Script service property isn't available during validation,
+        # so initialize it using the session token in the input metadata
+        self._service = client.connect(token=definition.metadata["session_key"])
 
-        validate_qurantine_label(qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key)
-        validate_hostname(hostname, pce_url, session_key)
-
-
-def run_script():
-    """Run script."""
-    illumio = Illumio()
-
-    # To ensure data collection is enabled only if chosen.
-    if illumio.enable_data_collection == 1:
-        illumio.print_ps_details()
-
-        arg = illumio.rest_help()
-
-        supercluster_info = get_pce_health(arg)
-
-        if len(supercluster_info[2]) > 0:
-            last_index = arg[0].rindex(":")
-            port_number = str(arg[0][last_index:])
-            for index in range(len(supercluster_info[2])):
-                supercluster_info[2][index] = "https://" + supercluster_info[2][index] + port_number
-            supercluster_members = ",".join(supercluster_info[2])
-            writeconf("TA-Illumio", arg[5], "supercluster_members", supercluster_info[1],
-                      {"supercluster_members": supercluster_members})
-
-        if supercluster_info[0]:
+        port_number = definition.parameters.get("port_number")
+        if port_number is not None and str(port_number) != "":
             try:
-                conf_value = cli.getConfStanza("supercluster_members", supercluster_info[1])
-                supercluster_info[2] = conf_value.get("supercluster_members", "")
+                validate_int(port_number, minimum=1, maximum=PORT_MAX)
             except Exception:
-                logger.error("Illumio Error: {} stanza not found in supercluster_members.conf file.".format(
-                    supercluster_info[1]))
+                raise ValueError("Port Number: must be an integer between 1 and 65535")
 
-        del arg[5]
-        arg.extend(supercluster_info)
+            tcp_input = get_tcp_input(self.service, port_number)
 
-        sys.stdout.flush()
+            if tcp_input and tcp_input.sourcetype != SYSLOG_SOURCETYPE:
+                raise ValueError(f"Port Number: {str(port_number)} TCP is already in use")
 
-        t1 = Thread(target=get_label, args=(arg,))
-        t2 = Thread(target=get_workload, args=(arg,))
-        t3 = Thread(target=get_ip_lists, args=(arg,))
-        t4 = Thread(target=get_services, args=(arg,))
+        quarantine_labels = definition.parameters.get("quarantine_labels")
+        if quarantine_labels:
+            try:
+                parse_label_scope(quarantine_labels)
+            except ValueError as e:
+                raise ValueError(f"Quarantine Labels: {e}")
 
-        t1.start()
-        t2.start()
-        t3.start()
-        t4.start()
+        params = IllumioInputParameters(name=definition.metadata["name"], **definition.parameters)
+        # lower the timeout and retry count for validation; Splunk will
+        # time out the input after 30 seconds either way
+        params.http_request_timeout = 5
+        params.http_retry_count = 1
 
-        t1.join()
-        t2.join()
-        t3.join()
-        t4.join()
+        # the API secret is stored in storage/passwords on the front-end,
+        # so we need to fetch it to validate the PCE connection
+        params.api_secret = get_password(self.service, params.api_secret_name)
+
+        # test the connection to the PCE
+        connect_to_pce(params)
+
+        if params.allowed_ips:
+            import ipaddress
+
+            for ip in params.allowed_ips:
+                try:
+                    if ip:
+                        ipaddress.ip_address(ip)
+                except ValueError as e:
+                    raise ValueError(f"Allowed IPs: {e}")
+
+    def stream_events(self, inputs: InputDefinition, ew: EventWriter):
+        """Modular input entry point.
+
+        Streams objects retrieved from the PCE as events to Splunk.
+
+        Args:
+            inputs (any): script inputs and metadata.
+            ew (EventWriter): Event writer object.
+        """
+        for input_name, input_item in inputs.inputs.items():
+            # we can't pass the __app field to the dataclass as private member
+            # variables are not allowed, so pop it out of the dict here
+            app_name = input_item.pop("__app")
+            params = IllumioInputParameters(name=input_name, **input_item)
+            log_prefix = f"{app_name}/{params.stanza} -"
+
+            try:
+                # set app context for the Splunk REST client
+                self.service.namespace.app = app_name
+                ew.log(EventWriter.INFO, f"{log_prefix} Running input")
+
+                if params.port_number and params.port_number > 0:
+                    # create the /tcp/raw input for the configured port if it doesn't exist
+                    if get_tcp_input(self.service, params.port_number) is None:
+                        create_tcp_input(self.service, app_name, params)
+
+                # retrieve the API secret from storage/passwords
+                params.api_secret = get_password(self.service, params.api_secret_name)
+
+                pce = connect_to_pce(params)
+
+                # write an event containing port scan details
+                ew.log(EventWriter.INFO, f"{log_prefix} Writing port scan settings to KVStore")
+                self._store_port_scan_settings(params)
+
+                # get PCE status and store each cluster in the response as a separate event
+                resp = pce.get("/health", include_org=False)
+                resp.raise_for_status()
+
+                pce_status = resp.json()
+
+                for cluster in pce_status:
+                    ew.write_event(self._pce_event(params, HEALTH_SOURCETYPE, **cluster))
+                ew.log(EventWriter.INFO, f"{log_prefix} Retrieved {params.pce_fqdn} PCE status")
+
+                # the PCE object isn't thread-safe, so create a second instance
+                # here as we will need to reassign the internal _hostname value
+                # to pull workloads from each Supercluster member
+                supercluster = Supercluster(connect_to_pce(params), pce_status)
+
+                with ThreadPoolExecutor() as exec:
+                    tasks = (
+                        (self._store_labels, pce, params),
+                        (self._store_ip_lists, pce, params),
+                        (self._store_services, pce, params),
+                        (self._store_workloads, supercluster, params),
+                        (self._store_rule_sets, pce, params),
+                    )
+                    futures = (exec.submit(*task) for task in tasks)
+                    for future in as_completed(futures):
+                        ew.write_event(future.result())
+            except Exception as e:
+                ew.log(EventWriter.ERROR, f"{log_prefix} Error running Illumio input: {e}")
+                ew.log(EventWriter.ERROR, f"{log_prefix} Traceback: {traceback.format_exc()}")
+
+    def _pce_event(self, params: IllumioInputParameters, sourcetype: str, **kwargs) -> Event:
+        """Wraps the given metadata in an Event object.
+
+        Args:
+            params (IllumioInputParameters): input parameter data object.
+            sourcetype (str, optional): event sourcetype.
+
+        Returns:
+            Event: the constructed Event object.
+        """
+        return Event(
+            data=json.dumps(kwargs),
+            host=params.pce_fqdn,
+            index=params.index,
+            source=params.source,
+            sourcetype=sourcetype,
+        )
+
+    def _metadata_event(self, params: IllumioInputParameters, type_: str, object_count: int) -> Event:
+        """Constructs a PCE metadata Event object.
+
+        Args:
+            params (IllumioInputParameters): input parameter data object.
+            type_ (str): Illumio object type.
+            object_count (int): total count of objects stored.
+
+        Returns:
+            Event: the constructed Event object.
+        """
+        return self._pce_event(
+            params=params,
+            sourcetype=SYSLOG_SOURCETYPE,
+            pce_fqdn=params.pce_fqdn,
+            org_id=params.org_id,
+            illumio_type=type_,
+            total_objects=object_count,
+            timestamp=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        )
+
+    def _store_port_scan_settings(self, params: IllumioInputParameters) -> None:
+        """Stores port scan settings for the input in a KVStore.
+
+        Args:
+            params (IllumioInputParameters): input parameter data object.
+        """
+        port_scan_settings = params.port_scan_details()
+        port_scan_settings["pce_fqdn"] = params.pce_fqdn
+        # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
+        port_scan_settings["org_id"] = str(params.org_id)
+        port_scan_settings["_key"] = f"{params.pce_fqdn}:{params.org_id}"
+        update_kvstore(self.service, KVSTORE_PORT_SCAN, [port_scan_settings])
+
+    def _store_labels(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
+        """Fetches labels from the PCE and stores them in a KVStore.
+
+        Args:
+            pce (PolicyComputeEngine): the PCE API client.
+            params (IllumioInputParameters): input parameter data object.
+
+        Returns:
+            Event: metadata Event to record the action in Splunk.
+        """
+        endpoint = pce.labels._build_endpoint(ACTIVE, None)
+        response = pce.get_collection(endpoint, include_org=False)
+        labels = response.json()
+
+        for label in labels:
+            flatten_refs(label, "created_by", "updated_by")
+
+        update_set = self._kvstore_union(KVSTORE_LABELS, params, labels)
+        update_kvstore(self.service, KVSTORE_LABELS, update_set)
+
+        return self._metadata_event(params, ILO_TYPE_LABELS, len(labels))
+
+    def _store_ip_lists(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
+        """Fetches IP lists from the PCE and stores them in a KVStore.
+
+        To avoid issues with nested structures, each IP range in the IP list
+        definition is flattened into its own KVStore entry.
+
+        Args:
+            pce (PolicyComputeEngine): the PCE API client.
+            params (IllumioInputParameters): input parameter data object.
+
+        Returns:
+            Event: metadata Event to record the action in Splunk.
+        """
+        endpoint = pce.ip_lists._build_endpoint(ACTIVE, None)
+        response = pce.get_collection(endpoint, include_org=False)
+        ip_lists = response.json()
+        flattened_ip_lists = []
+
+        for ip_list in ip_lists:
+            flatten_refs(ip_list, "created_by", "updated_by")
+
+            # convert IP list into multiple entries, one for each IP range
+            flattened_ip_lists += flatten_ip_list(ip_list, params.pce_fqdn)
+
+        update_set = self._kvstore_union(KVSTORE_IP_LISTS, params, flattened_ip_lists)
+        update_kvstore(self.service, KVSTORE_IP_LISTS, update_set)
+
+        return self._metadata_event(params, ILO_TYPE_IP_LISTS, len(ip_lists))
+
+    def _store_services(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
+        """Fetches services from the PCE and stores them in a KVStore.
+
+        To avoid issues with nested structures, each service_port,
+        windows_service, and windows_egress_service entry in the service
+        definition is flattened into its own KVStore entry.
+
+        Args:
+            pce (PolicyComputeEngine): the PCE API client.
+            params (IllumioInputParameters): input parameter data object.
+
+        Returns:
+            Event: metadata Event to record the action in Splunk.
+        """
+        endpoint = pce.services._build_endpoint(ACTIVE, None)
+        response = pce.get_collection(endpoint, include_org=False)
+        services = response.json()
+        flattened_services = []
+
+        for service in services:
+            flatten_refs(service, "created_by", "updated_by")
+
+            # convert service into multiple entries, one for each service definition
+            flattened_services += flatten_service(service, params.pce_fqdn)
+
+        update_set = self._kvstore_union(KVSTORE_SERVICES, params, flattened_services)
+        update_kvstore(self.service, KVSTORE_SERVICES, update_set)
+
+        return self._metadata_event(params, ILO_TYPE_SERVICES, len(services))
+
+    def _store_workloads(self, sc: Supercluster, params: IllumioInputParameters) -> Event:
+        """Fetches workloads from the PCE and stores them in a KVStore.
+
+        Workload interfaces are pulled from the workload response and stored in
+        a separate collection, `illumio_workload_interfaces`.
+
+        Args:
+            sc (Supercluster): wrapped PCE API client. Some workload
+                metadata is not replicated on Superclusters, so we fetch from
+                all clusters individually.
+            params (IllumioInputParameters): input parameter data object.
+
+        Returns:
+            Event: metadata Event to record the action in Splunk.
+        """
+        # Supercluster is really just a wrapper around the PCE client
+        # this call will work for SNC/MNC/SaaS architectures as well
+        workloads = sc.get_workloads()
+
+        interfaces = []
+
+        for workload in workloads:
+            # we discard the cluster name here, but can always add a lookup for
+            # container clusters later
+            flatten_refs(workload, "created_by", "updated_by", "container_cluster")
+
+            # add convenience field indicating managed/unmanaged
+            workload["managed"] = workload.get("ven") is not None
+
+            # flatten labels array to simplify MV field name
+            workload["labels"] = [label["href"] for label in workload.get("labels", [])]
+
+            # workload interfaces are stored in a separate collection, so pop
+            # them from the workload record and assign a unique key of the form
+            # < pce_fqdn:workload_href:interface_name:interface_address >
+            workload_href = workload["href"]
+            for intf in workload.pop("interfaces", []):
+                flatten_refs(intf, "network")
+                key = f"{params.pce_fqdn}:{workload_href}:{intf['name']}:{intf['address']}"
+                interfaces.append({**intf, "workload_href": workload_href, "_key": key})
+
+        update_set = self._kvstore_union(KVSTORE_WORKLOADS, params, workloads)
+        update_kvstore(self.service, KVSTORE_WORKLOADS, update_set)
+
+        update_set = self._kvstore_union(KVSTORE_WORKLOAD_INTERFACES, params, interfaces)
+        update_kvstore(self.service, KVSTORE_WORKLOAD_INTERFACES, update_set)
+
+        return self._metadata_event(params, ILO_TYPE_WORKLOADS, len(workloads))
+
+    def _store_rule_sets(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
+        """Fetches rule sets from the PCE and stores them in a KVStore.
+
+        All rules removed from the rule set response and stored in a separate
+        collection with a reference back to the parent rule set.
+
+        Args:
+            pce (PolicyComputeEngine): the PCE API client.
+            params (IllumioInputParameters): input parameter data object.
+
+        Returns:
+            Event: metadata Event to record the action in Splunk.
+        """
+        endpoint = pce.rule_sets._build_endpoint(ACTIVE, None)
+        response = pce.get_collection(endpoint, include_org=False)
+        rule_sets = response.json()
+        rules = []
+
+        for rule_set in rule_sets:
+            flatten_refs(rule_set, "created_by", "updated_by")
+
+            scopes = {}
+            for i, scope in enumerate(rule_set.get("scopes", [])):
+                scopes[i] = flatten_scope(scope)
+            rule_set["scopes"] = scopes
+
+            rules += flatten_rules(rule_set)
+
+        update_set = self._kvstore_union(KVSTORE_RULE_SETS, params, rule_sets)
+        update_kvstore(self.service, KVSTORE_RULE_SETS, update_set)
+
+        update_set = self._kvstore_union(KVSTORE_RULES, params, rules)
+        update_kvstore(self.service, KVSTORE_RULES, update_set)
+
+        return self._metadata_event(params, ILO_TYPE_RULE_SETS, len(rule_sets))
+
+    def _kvstore_union(self, name: str, params: IllumioInputParameters, new: List[dict]) -> List[dict]:
+        """Unifies old KVStore records with the updated list from the PCE.
+
+        Marks any objects in the KVStore that are no longer on the PCE as
+        deleted to maintain a record of the object in Splunk.
+
+        Args:
+            name (str): the name of the KVStore to use.
+            params (IllumioInputParameters): input parameter data object.
+            new (List[dict]): list of objects from the PCE.
+
+        Returns:
+            List[dict]: the unified list of objects.
+        """
+        kvstores = self.service.kvstore
+        kvstore = kvstores[name]
+        old = kvstore.data.query(query={"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id)})
+
+        # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
+        fields = {"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id), "deleted": False}
+
+        # build an index of all objects in the KVStore and mark them as deleted
+        idx = {o["_key"]: {**o, "deleted": True} for o in old}
+
+        for o in new:
+            # prepend the PCE FQDN to the key to ensure uniqueness across multiple PCEs
+            key = o.get("_key", f"{params.pce_fqdn}:{o.get('href', '')}")
+            idx[key] = {**o, **fields, "_key": key}
+
+        return list(idx.values())
 
 
-if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--scheme":
-            do_scheme()
-        elif sys.argv[1] == "--validate-arguments":
-            validate_arguments()
-    else:
-        run_script()
-
-    sys.exit(0)
+if __name__ == "__main__":
+    sys.exit(Illumio().run(sys.argv))

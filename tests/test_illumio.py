@@ -74,10 +74,10 @@ def test_update_mod_inputs(mock_inp_conf, mock_req, config):
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     content = {
@@ -131,10 +131,10 @@ def test_rest_help(mock_inp_conf, mock_mod_inp, config):
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     res = il.Illumio().rest_help()
@@ -163,10 +163,10 @@ def test_print_ps_details(mock_inp_conf, mock_mod_inp, mock_print, config):
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     il.Illumio().print_ps_details()
@@ -197,10 +197,10 @@ def test_get_cred(mock_inp_conf, mock_mod_inp, config):
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     il_obj = il.Illumio()
@@ -228,10 +228,10 @@ def test_password_store(mock_inp_conf, mock_mod_inp, config):
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     il_obj = il.Illumio()
@@ -301,16 +301,16 @@ SCHEME = r"""<scheme>
                 <required_on_edit>false</required_on_edit>
                 <required_on_create>false</required_on_create>
             </arg>
-            <arg name="qurantine_label">
+            <arg name="quarantine_labels">
                 <title>Labels to quarantine workloads</title>
                 <description>Comma Separated list of three labels of type app, location and environment.</description>
                 <required_on_edit>false</required_on_edit>
                 <required_on_create>false</required_on_create>
                 <validation>
-                    validate(match(qurantine_label, '(\S+,\S+,\S+)'), "Enter three labels of type app, env and loc")
+                    validate(match(quarantine_labels, '(\S+,\S+,\S+)'), "Enter three labels of type app, env and loc")
                 </validation>
             </arg>
-            <arg name="allowed_ip">
+            <arg name="allowed_ips">
                 <title>Comma Separated list of Source IPs, which will be ignored in Port scans</title>
                 <description>Port scans from these Source IPs are ignored</description>
                 <required_on_edit>false</required_on_edit>
@@ -370,10 +370,10 @@ def test_validate_arguments_portstatus0tcpreloadfail(
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     mock_port_status.return_value = 0
@@ -407,10 +407,10 @@ def test_validate_arguments_portstatus0exception(
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     mock_port_status.return_value = 0
@@ -441,10 +441,10 @@ def test_validate_arguments_portstatus1(mock_getdata, mock_port_status, mock_con
         "time_interval_port": 10,
         "cnt_port_scan": 10,
         "interval": 3700,
-        "qurantine_label": "",
+        "quarantine_labels": "",
         "hostname": "",
         "org_id": 1,
-        "allowed_ip": "",
+        "allowed_ips": "",
     }
 
     mock_port_status.return_value = 1
@@ -469,10 +469,10 @@ def test_validate_arguments_noapikey(mock_getdata, config):
         "time_interval_port": 8000,
         "cnt_port_scan": 8000,
         "interval": 3700,
-        "qurantine_label": "app,env,loc",
+        "quarantine_labels": "app,env,loc",
         "hostname": "hostname",
         "org_id": 1,
-        "allowed_ip": "10.0.6.29",
+        "allowed_ips": "10.0.6.29",
     }
 
     mock_getdata.return_value = val_data
@@ -513,29 +513,29 @@ def test_validate_hostname_error(mock_error, config):
 
 
 @patch("illumio.print_error")
-def test_validate_allowed_ip(mock_error, config):
-    """Test validate_allowed_ip method."""
+def test_validate_allowed_ips(mock_error, config):
+    """Test validate_allowed_ips method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    allowed_ip = "ip1,ip2"
+    allowed_ips = "ip1,ip2"
 
     mock_util.is_ip.side_effect = [True, True]
 
-    il.validate_allowed_ip(allowed_ip, session_key)
+    il.validate_allowed_ips(allowed_ips, session_key)
 
 
 @patch("illumio.print_error")
-def test_validate_allowed_ip_exception(mock_error, config):
-    """Test validate_allowed_ip method."""
+def test_validate_allowed_ips_exception(mock_error, config):
+    """Test validate_allowed_ips method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    allowed_ip = 123  # exception
+    allowed_ips = 123  # exception
 
-    il.validate_allowed_ip(allowed_ip, session_key)
+    il.validate_allowed_ips(allowed_ips, session_key)
 
     mock_util.get_logger().exception.assert_called_with(
         "Error in Validating Allowed port scanner Source IP addresses"
@@ -543,17 +543,17 @@ def test_validate_allowed_ip_exception(mock_error, config):
 
 
 @patch("illumio.print_error")
-def test_validate_allowed_ip_error(mock_error, config):
-    """Test validate_allowed_ip method."""
+def test_validate_allowed_ips_error(mock_error, config):
+    """Test validate_allowed_ips method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    allowed_ip = "ip,ip1"
+    allowed_ips = "ip,ip1"
 
     mock_util.is_ip.side_effect = [False, False]
 
-    il.validate_allowed_ip(allowed_ip, session_key)
+    il.validate_allowed_ips(allowed_ips, session_key)
 
     mock_error.assert_has_calls(
         [
@@ -566,13 +566,13 @@ def test_validate_allowed_ip_error(mock_error, config):
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_exception(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_exception(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = 123  # for exception
+    quarantine_labels = 123  # for exception
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
@@ -580,20 +580,20 @@ def test_validate_qurantine_label_exception(mock_error, config):
 
     mock_util.check_label_exists.side_effect = ["label", "label", "label"]
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
     mock_util.get_logger().exception.assert_called_with("Error in Validating Label")
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_label(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_label(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = "app,env,loc"
+    quarantine_labels = "app,env,loc"
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
@@ -601,8 +601,8 @@ def test_validate_qurantine_label_label(mock_error, config):
 
     mock_util.check_label_exists.side_effect = ["label", "label", "label"]
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
 
     mock_util.writeconf.assert_called_with(
@@ -615,13 +615,13 @@ def test_validate_qurantine_label_label(mock_error, config):
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_loclabelnotfound(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_loclabelnotfound(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = "app,env,loc"
+    quarantine_labels = "app,env,loc"
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
@@ -629,20 +629,20 @@ def test_validate_qurantine_label_loclabelnotfound(mock_error, config):
 
     mock_util.check_label_exists.side_effect = ["label", "label", ""]
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
     mock_error.assert_has_calls([call("Third label should be of type loc. ", "session_key",)])
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_envlabelnotfound(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_envlabelnotfound(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = "app,env,loc"
+    quarantine_labels = "app,env,loc"
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
@@ -650,20 +650,20 @@ def test_validate_qurantine_label_envlabelnotfound(mock_error, config):
 
     mock_util.check_label_exists.side_effect = ["label", "", "label"]
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
     mock_error.assert_has_calls([call("Second label should be of type env. ", "session_key",)])
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_applabelnotfound(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_applabelnotfound(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = "app,env,loc"
+    quarantine_labels = "app,env,loc"
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
@@ -671,27 +671,27 @@ def test_validate_qurantine_label_applabelnotfound(mock_error, config):
 
     mock_util.check_label_exists.side_effect = ["", "label", "label"]
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
     mock_error.assert_has_calls([call("First label should be of type app. ", "session_key",)])
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_wronglabel(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_wronglabel(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = "label"
+    quarantine_labels = "label"
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
     org_id = "org_id"
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
 
     mock_error.assert_has_calls(
@@ -700,20 +700,20 @@ def test_validate_qurantine_label_wronglabel(mock_error, config):
 
 
 @patch("illumio.print_error")
-def test_validate_qurantine_label_nolabel(mock_error, config):
-    """Test validate_qurantine_label method."""
+def test_validate_quarantine_labels_nolabel(mock_error, config):
+    """Test validate_quarantine_labels method."""
     il, mocks = config
     mock_util = mocks["mock_util"]
 
     session_key = "session_key"
-    qurantine_label = ""
+    quarantine_labels = ""
     pce_url = "pce_url"
     api_key_id = "api_key_id"
     api_secret = "api_secret"
     org_id = "org_id"
 
-    il.validate_qurantine_label(
-        qurantine_label, pce_url, api_key_id, api_secret, org_id, session_key
+    il.validate_quarantine_labels(
+        quarantine_labels, pce_url, api_key_id, api_secret, org_id, session_key
     )
 
     mock_util.writeconf.assert_called_with(

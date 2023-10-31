@@ -5,26 +5,26 @@
     "id": {
       "group": null,
       "name": "TA-Illumio",
-      "version": "3.2.3"
+      "version": "4.0.0"
     },
     "author": [
       {
         "name": "Illumio Inc.",
-        "email": null,
-        "company": null
+        "email": "app-integrations@illumio.com",
+        "company": "Illumio"
       }
     ],
     "releaseDate": null,
     "description": "The Illumio Technology Add-On for Splunk that enriches Illumio data with Common Information Model (CIM) field names, event types and tags.",
     "classification": {
-      "intendedAudience": null,
-      "categories": [],
-      "developmentStatus": null
+      "intendedAudience": "Network Security Teams",
+      "categories": ["Network Security"],
+      "developmentStatus": "Production/Stable"
     },
     "commonInformationModels": null,
     "license": {
-      "name": null,
-      "text": null,
+      "name": "Apache License, Version 2.0",
+      "text": "./LICENSE",
       "uri": null
     },
     "privacyPolicy": {
