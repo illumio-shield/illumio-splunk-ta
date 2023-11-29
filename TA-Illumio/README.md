@@ -16,9 +16,9 @@
 
 ## Overview  
 
-The [Illumio Add-on for Splunk]((https://splunkbase.splunk.com/app/3657)) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.
+The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.  
 
-### Version - 4.0.0  
+### Version - 4.0.1  
 
 **Supported Splunk versions**  
 * 8.1.x
@@ -44,9 +44,9 @@ The `TA-Illumio` add-on can be installed in either a standalone or distributed S
 > [!NOTE]
 > Recommendations for the configuration and topology of a distributed Splunk environment are outside the scope of this document. See the documentation on [Splunk Validated Architectures](https://docs.splunk.com/Documentation/SVA/current/Architectures/Introduction) for suggestions on topology for distributed deployments.  
 
-* For a standalone deployment, install and configure the TA as described in the [Installation](#installation) section below.  
+For a standalone deployment, install and configure the TA as described in the [Installation](#installation) section below.  
 
-* For a distributed environment, install the TA to a Splunk Heavy Forwarder.  
+For a distributed environment, install the TA to a Splunk Heavy Forwarder, as well as the indexer/indexer cluster and search head/search head cluster. The **Illumio** modular input should be configured to run on the heavy forwarder, and installation on the indexer and search head tiers are needed for index-time and search-time transforms in the app respectively.  
 
 > [!IMPORTANT]
 > The `TA-Illumio` add-on cannot be installed on a Universal Forwarder.  
@@ -88,14 +88,15 @@ tar zxf /path/to/TA-Illumio.spl -C $SPLUNK_HOME/etc/apps/
 
 **Creating a PCE API key**  
 
-To create a User-scoped API key:
+To create a User-scoped API key:  
 
 1. In the PCE, open the user menu dropdown at the top-right of the page and select **My API keys**
 2. Click **Add**. Note down the **Org ID** shown in the dialog and enter a display name for the key
-3. Click `Create`. Copy or download the API key credentials and store them somewhere secure
+3. Click **Create**. Copy or download the API key credentials and store them somewhere secure
 
-To create a Service Account API key:
+To create a Service Account API key:  
 
+> [!NOTE]
 > The Org ID value is not shown when creating a Service Account key - you can find it when creating a User API key as described above.
 
 1. In the PCE, open the **Access** submenu on the left side of the screen and select **Service Accounts**
@@ -259,7 +260,7 @@ The following search can be run from the Splunk UI to quarantine the workload wi
 * Service Account keys have a default expiration of 90 days - make sure to rotate them before expiration
 * For some versions of the PCE (21.5) some API endpoints may return a 403 despite the Service Account key having the necessary permissions - when seeing 403 errors in the TA logs, create a new key or use a User-scoped API key instead
 
-**Supercluster**
+**Supercluster**  
 
 * The `illumio_*` metadata collections set the **pce_fqdn** field value to be the domain name of the PCE referenced in the input configuration. This could lead to these metadata objects having different **pce_fqdn** values from syslog events pushed by individual SC members
 
@@ -315,13 +316,13 @@ If forwarded events are not showing up in Splunk
 * If TLS is enabled for the connection, make sure the `[tcp-ssl]` and `[SSL]` stanzas are configured correctly in `inputs.conf`
 * Make sure the TCP input has `sourcetype = illumio:pce`
 
-**KVStores**
+**KVStores**  
 
 If data is not showing up in the `illumio_*` metadata stores
 * If using a distributed Splunk environment, make sure to set `replicate = true` for all collections in `$SPLUNK_HOME/etc/apps/TA-Illumio/local/collections.conf` to enable replication across all indexers
 * Check `$SPLUNK_HOME/var/log/splunk/mongod.log` for any startup or runtime errors with mongodb
 * Call the [Splunk API endpoint](https://dev.splunk.com/enterprise/docs/developapps/manageknowledge/kvstore/usetherestapitomanagekv/) for the collection to check if objects are being stored
-* Check that the `transforms.conf` stanza for the collection lookupis configured correctly
+* Check that the `transforms.conf` stanza for the collection lookup is configured correctly
 
 ### Testing the PCE Connection  
 
@@ -373,13 +374,19 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ## Release Notes  
 
+### Version 4.0.1  
+
+* Removed support for `http://` PCE URLs to meet Splunk Cloud compatibility criteria
+* Added missing **agent.type**, **agent.active_pce_fqdn**, and **agent.target_pce_fqdn** fields to `illumio_workloads` collection and lookup definitions
+* Moved the `illumio_quarantine_workload` role definition from the app to the TA
+
 ### Version 4.0.0  
 
 * **Syslog prefixes are stripped at index-time for JSON-formatted events**
 > [!IMPORTANT]
 > Due to this change, the search-time extractions and transforms for version 4.0.0 are incompatible with data indexed by previous versions of the TA. See the [v4.0.0 upgrade steps](#v323-to-v400) above for more detailed instructions for upgrading from an earlier version.
 
-**New Features**
+**New Features**  
 
 * Added support for label types beyond the default RAEL dimensions
     * Static RAEL field extractions have been removed
@@ -389,7 +396,7 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 * Added flag to specify `[tcp]` or `[tcp-ssl]` when creating a new TCP stanza for receiving syslog events
 * System health and PCE status events are now filtered under the new **illumio:pce:health** sourcetype
 
-**Improvements**
+**Improvements**  
 
 * The TA now supports CIM v5.x
 * Updated PCE and Splunk versions supported
@@ -398,7 +405,7 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 * The `markquarantine` alert action has been renamed `illumio_quarantine`, and can now be configured with any number of label dimensions
     * The **Quarantine Labels** parameter in the `Illumio` input accepts a list of label key:value pairs that form the quarantine policy scope on the PCE. See the [workload quarantine action](#workload-quarantine-action) section above for details
 
-**Removed Features**
+**Removed Features**  
 
 * **Python 2.7 is no longer supported**
     * The TA now supports python v3.7+
