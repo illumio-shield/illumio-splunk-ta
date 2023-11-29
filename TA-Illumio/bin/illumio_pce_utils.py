@@ -44,9 +44,7 @@ class PCEConnectionConfig:
     def _parse_url(self, url: str) -> tuple:
         """Parses the given URL, returning a tuple containing the FQDN and port.
 
-        Unless specified in the URL, the port value defaults to 80 or 443 are
-        for scheme values of http:// and https:// respectively. Any other
-        scheme value will default to 443.
+        Unless specified in the URL, the port value defaults to 443.
 
         Args:
             url (str): the URL to parse.
@@ -58,7 +56,11 @@ class PCEConnectionConfig:
         if not re.match(pattern, url):
             url = f"https://{url}"
         parsed = urlparse(url)
-        port = parsed.port or (80 if parsed.scheme == "http" else 443)
+        if parsed.scheme == "http":
+            raise ValueError(
+                "PCE URL: Unencrypted HTTP connections are not supported; use an https:// address"
+            )
+        port = parsed.port or 443
         return parsed.hostname, port
 
 
@@ -491,13 +493,17 @@ def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
 
     for entry in ip_ranges + fqdns:
         # construct a unique key suffix for each IP list entry
-        entry_key = ":".join([
-            quote(str(k), safe="") for k in (
-                entry.get("from_ip"),
-                entry.get("to_ip"),
-                entry.get("fqdn"),
-            ) if k
-        ])
+        entry_key = ":".join(
+            [
+                quote(str(k), safe="")
+                for k in (
+                    entry.get("from_ip"),
+                    entry.get("to_ip"),
+                    entry.get("fqdn"),
+                )
+                if k
+            ]
+        )
         key = f"{pce_fqdn}:{ip_list['href']}:{entry_key}"
         entry["entry_description"] = entry.pop("description", None)
         ip_list_entries.append({**ip_list, **entry, "_key": key})
@@ -536,17 +542,21 @@ def flatten_service(service: dict, pce_fqdn: str) -> List[dict]:
         # and proto (Linux service) and service/proc name (Windows service)
         # this lets us track each entry if it's removed from the service or
         # if the service itself is removed
-        entry_key = ":".join([
-            quote(str(k), safe="") for k in (
-                entry.get("port"),
-                entry.get("to_port"),
-                entry.get("icmp_type"),
-                entry.get("icmp_code"),
-                entry.get("proto"),
-                entry.get("service_name"),
-                entry.get("process_name"),
-            ) if k
-        ])
+        entry_key = ":".join(
+            [
+                quote(str(k), safe="")
+                for k in (
+                    entry.get("port"),
+                    entry.get("to_port"),
+                    entry.get("icmp_type"),
+                    entry.get("icmp_code"),
+                    entry.get("proto"),
+                    entry.get("service_name"),
+                    entry.get("process_name"),
+                )
+                if k
+            ]
+        )
         key = f"{pce_fqdn}:{service['href']}:{entry_key}"
         # rename the top-level process_name field to avoid overwriting it
         service["spn"] = service.get("process_name")
