@@ -4,9 +4,8 @@
 
 pce_url = <value>
     * The full URL of the Illumio PCE to connect to. If a scheme is not provided,
-      https:// is used by default.
-    * If a port is not provided, it is assumed to be the default for the given
-      scheme (80 for HTTP, 443 for HTTPS).
+      https:// is used by default. Insecure http:// addresses are not supported.
+    * If a port is not provided, it is assumed to be 443.
     * Example value: https://my.pce.com:8443
 
 api_key_id = <value>
@@ -44,7 +43,7 @@ quarantine_labels = <value>
       zone scope in the PCE.
     * Configured labels are applied to selected workloads when the `illumio_quarantine`
       action is run.
-    * The labels must exist in the PCE and any policy restricing access to the
+    * The labels must exist in the PCE and any policy restricting access to the
       quarantine zone must be defined separately.
     * Must be of the form key1:value1,...,keyN:valueN
     * Keys and values are case-sensitive.

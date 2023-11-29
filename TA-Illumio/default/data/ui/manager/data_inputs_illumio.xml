@@ -13,7 +13,8 @@
       <view name="list"/>
       <view name="edit"/>
       <view name="create"/>
-      <key name="exampleText">Full URL of the PCE to connect to, including port. Example value: https://my.pce.com:8443</key>
+      <key name="exampleText">Full URL of the PCE to connect to, including port. http:// addresses are not supported.
+If no port is specified, :443 is assumed. Example value: https://my.pce.com:8443</key>
     </element>
     <element name="org_id" label="Organization ID">
       <view name="list"/>
