@@ -172,7 +172,7 @@ index=illumio_index sourcetype="illumio:pce" "Testing syslog connection from PCE
 
 ## Upgrade Steps  
 
-### v3.2.3 to v4.0.0  
+### v3.2.3 to >= v4.0.0  
 
 1. The updated `Illumio` modular input in v4.0.0 is incompatible with previous versions. Remove all inputs created with previous versions of the TA
 2. Remove `passwords.conf` entries for Illumio API keys and secrets created for `Illumio` modular inputs by previous versions of the TA
@@ -213,7 +213,7 @@ index=illumio_index sourcetype="illumio:pce" "Testing syslog connection from PCE
 
 * No steps required
 
-### <= v2.2.0 to 2.2.1  
+### v2.2.0 to 2.2.1  
 
 If using the "IP Address of PCE Node" field of Data Inputs page for Private IP addresses then follow the below steps after upgrading to version 2.2.1:  
 
