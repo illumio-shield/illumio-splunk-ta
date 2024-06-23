@@ -11,6 +11,7 @@ License:
 SYSLOG_SOURCETYPE = "illumio:pce"
 HEALTH_SOURCETYPE = "illumio:pce:health"
 QUARANTINE_ACTION_SOURCETYPE = "illumio:pce:quarantine"
+API_METADATA_SOURCETYPE="illumio:pce:metadata"
 
 # KVStore names
 KVSTORE_IP_LISTS = "illumio_ip_lists"
