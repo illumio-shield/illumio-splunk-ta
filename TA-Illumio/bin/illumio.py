@@ -313,6 +313,7 @@ class Illumio(Script):
                 pce_status = resp.json()
 
                 for cluster in pce_status:
+                    cluster["illumio_type"] = "illumio:pce:health"
                     ew.write_event(self._pce_event(params, HEALTH_SOURCETYPE, **cluster))
                 ew.log(EventWriter.INFO, f"{log_prefix} Retrieved {params.pce_fqdn} PCE status")
 
@@ -324,9 +325,9 @@ class Illumio(Script):
                 with ThreadPoolExecutor() as exec:
                     tasks = (
                         (self._store_labels, pce, params, ew),
-                        (self._store_ip_lists, pce, params),
-                        (self._store_services, pce, params),
-                        (self._store_workloads, supercluster, params),
+                        (self._store_ip_lists, pce, params, ew),
+                        (self._store_services, pce, params, ew),                        
+                        (self._store_workloads, supercluster, params, ew),
                         (self._store_rule_sets, pce, params),
                     )
                     futures = (exec.submit(*task) for task in tasks)
@@ -339,7 +340,7 @@ class Illumio(Script):
                         #    timestamp: 2024-06-23T07:58:12.228437Z
                         #    total_objects: 79
                         # }
-                        # To write individual rows as events, use write_event while looping over results
+                        # To write individual rows as events, use write_event while looping over results                  
                         ew.write_event(future.result())
             except Exception as e:
                 ew.log(EventWriter.ERROR, f"{log_prefix} Error running Illumio input: {e}")
@@ -447,7 +448,7 @@ class Illumio(Script):
             flattened_ip_lists += flatten_ip_list(ip_list, params.pce_fqdn)
             # backport from 3.2.3, ensure an event is also written            
             ip_list["illumio_type"] = "illumio:pce:ip_lists"
-            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **flattened_ip_lists))            
+            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **ip_list))            
 
         update_set = self._kvstore_union(KVSTORE_IP_LISTS, params, flattened_ip_lists)
         update_kvstore(self.service, KVSTORE_IP_LISTS, update_set)
@@ -480,13 +481,13 @@ class Illumio(Script):
             flattened_services += flatten_service(service, params.pce_fqdn)
             # backport from 3.2.3, ensure an event is also written            
             service["illumio_type"] = "illumio:pce:services"
-            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **flattened_services))            
+            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **service))            
 
         update_set = self._kvstore_union(KVSTORE_SERVICES, params, flattened_services)
         update_kvstore(self.service, KVSTORE_SERVICES, update_set)
 
         return self._metadata_event(params, ILO_TYPE_SERVICES, len(services))
-
+                                                    
     def _store_workloads(self, sc: Supercluster, params: IllumioInputParameters, ew: EventWriter) -> Event:
         """Fetches workloads from the PCE and stores them in a KVStore.
 
@@ -505,11 +506,10 @@ class Illumio(Script):
         # Supercluster is really just a wrapper around the PCE client
         # this call will work for SNC/MNC/SaaS architectures as well
         workloads = sc.get_workloads()
-        
         # backport from 3.2.3
         online = offline = 0
         workloads_metadata = {}
-
+        
         interfaces = []
 
         for workload in workloads:
@@ -517,16 +517,17 @@ class Illumio(Script):
             workload_status = workload.get("online", None)
             if workload_status:
                 online += 1
-
             else:
-                offline += 1                        
-            
+                offline += 1              
             # we discard the cluster name here, but can always add a lookup for
             # container clusters later
             flatten_refs(workload, "created_by", "updated_by", "container_cluster")
-
+            workload["illumio_type"] = "illumio:pce:workload"
+            workload["fqdn"] = params.pce_fqdn   
             # add convenience field indicating managed/unmanaged
             workload["managed"] = workload.get("ven") is not None
+            
+            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **workload))
 
             # flatten labels array to simplify MV field name
             workload["labels"] = [label["href"] for label in workload.get("labels", [])]
@@ -539,19 +540,12 @@ class Illumio(Script):
                 flatten_refs(intf, "network")
                 key = f"{params.pce_fqdn}:{workload_href}:{intf['name']}:{intf['address']}"
                 interfaces.append({**intf, "workload_href": workload_href, "_key": key})
-            # backport from 3.2.3, ensure an event is also written            
-            workload["event_type"] = "illumio:pce:workload"
-            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **workload))                  
-        
-        # Add a log that summarises online, offline and total workloads with illumio_type
-        #
+
         workloads_metadata["illumio_type"] = "illumio:pce:workload"
         workloads_metadata["online_workloads"] = online
         workloads_metadata["offline_worloads"] = offline
         workloads_metadata["total_workloads"] = online + offline
-
-        ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **workloads_metadata))
-
+        
         update_set = self._kvstore_union(KVSTORE_WORKLOADS, params, workloads)
         update_kvstore(self.service, KVSTORE_WORKLOADS, update_set)
 
@@ -560,7 +554,7 @@ class Illumio(Script):
 
         return self._metadata_event(params, ILO_TYPE_WORKLOADS, len(workloads))
 
-    def _store_rule_sets(self, pce: PolicyComputeEngine, params: IllumioInputParameters, ew: EventWriter) -> Event:
+    def _store_rule_sets(self, pce: PolicyComputeEngine, params: IllumioInputParameters) -> Event:
         """Fetches rule sets from the PCE and stores them in a KVStore.
 
         All rules removed from the rule set response and stored in a separate
@@ -587,9 +581,6 @@ class Illumio(Script):
             rule_set["scopes"] = scopes
 
             rules += flatten_rules(rule_set)
-        # backport from 3.2.3, ensure an event is also written            
-        rule_set["event_type"] = "illumio:pce:rule_sets"
-        ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **rule_set))          
 
         update_set = self._kvstore_union(KVSTORE_RULE_SETS, params, rule_sets)
         update_kvstore(self.service, KVSTORE_RULE_SETS, update_set)
