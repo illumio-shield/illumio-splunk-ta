@@ -315,6 +315,7 @@ class Illumio(Script):
                 for cluster in pce_status:
                     cluster["illumio_type"] = "illumio:pce:health"
                     ew.write_event(self._pce_event(params, HEALTH_SOURCETYPE, **cluster))
+                    ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **cluster))
                 ew.log(EventWriter.INFO, f"{log_prefix} Retrieved {params.pce_fqdn} PCE status")
 
                 # the PCE object isn't thread-safe, so create a second instance
