@@ -524,7 +524,8 @@ class Illumio(Script):
             # container clusters later
             flatten_refs(workload, "created_by", "updated_by", "container_cluster")
             workload["illumio_type"] = "illumio:pce:workload"
-            workload["fqdn"] = params.pce_fqdn   
+            workload["fqdn"] = params.pce_fqdn  
+            workload["leader_fqdn"] = params.pce_fqdn  
             # add convenience field indicating managed/unmanaged
             workload["managed"] = workload.get("ven") is not None
             
@@ -546,6 +547,8 @@ class Illumio(Script):
         workloads_metadata["online_workloads"] = online
         workloads_metadata["offline_worloads"] = offline
         workloads_metadata["total_workloads"] = online + offline
+        
+        ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **workloads_metadata))
         
         update_set = self._kvstore_union(KVSTORE_WORKLOADS, params, workloads)
         update_kvstore(self.service, KVSTORE_WORKLOADS, update_set)
