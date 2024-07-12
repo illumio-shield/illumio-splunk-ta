@@ -304,7 +304,7 @@ class Illumio(Script):
 
                 # write an event containing port scan details
                 ew.log(EventWriter.INFO, f"{log_prefix} Writing port scan settings to KVStore")
-                self._store_port_scan_settings(params)
+                self._store_port_scan_settings(params, ew)
 
                 # get PCE status and store each cluster in the response as a separate event
                 resp = pce.get("/health", include_org=False)
@@ -386,7 +386,7 @@ class Illumio(Script):
             timestamp=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         )
 
-    def _store_port_scan_settings(self, params: IllumioInputParameters) -> None:
+    def _store_port_scan_settings(self, params: IllumioInputParameters, ew: EventWriter) -> None:
         """Stores port scan settings for the input in a KVStore.
 
         Args:
@@ -394,9 +394,15 @@ class Illumio(Script):
         """
         port_scan_settings = params.port_scan_details()
         port_scan_settings["pce_fqdn"] = params.pce_fqdn
+        #backported field from 3.2.3
+        port_scan_settings["pce_url"] = params.pce_fqdn
+        port_scan_settings["port_scan"] = params.port_scan_threshold
+        port_scan_settings["illumio_type"] = "illumio:pce:ps_details"
         # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
         port_scan_settings["org_id"] = str(params.org_id)
         port_scan_settings["_key"] = f"{params.pce_fqdn}:{params.org_id}"
+        #backport to 3.2.3
+        ew.write_event(self._pce_event(params, KVSTORE_PORT_SCAN, **port_scan_settings))
         update_kvstore(self.service, KVSTORE_PORT_SCAN, [port_scan_settings])
 
     def _store_labels(self, pce: PolicyComputeEngine, params: IllumioInputParameters, ew: EventWriter) -> Event:
@@ -414,10 +420,11 @@ class Illumio(Script):
         labels = response.json()
 
         for label in labels:
-            flatten_refs(label, "created_by", "updated_by")
-            # backport from 3.2.3, ensure an event is also written            
+            # backport from 3.2.3, ensure an event is written before flattening refs            
             label["illumio_type"] = "illumio:pce:label"
             ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **label))
+
+            flatten_refs(label, "created_by", "updated_by")
 
         update_set = self._kvstore_union(KVSTORE_LABELS, params, labels)
         update_kvstore(self.service, KVSTORE_LABELS, update_set)
@@ -443,13 +450,13 @@ class Illumio(Script):
         flattened_ip_lists = []
 
         for ip_list in ip_lists:
+            # backport from 3.2.3, ensure an event is written before flattening refs            
+            ip_list["illumio_type"] = "illumio:pce:ip_lists"
+            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **ip_list))            
             flatten_refs(ip_list, "created_by", "updated_by")
 
             # convert IP list into multiple entries, one for each IP range
             flattened_ip_lists += flatten_ip_list(ip_list, params.pce_fqdn)
-            # backport from 3.2.3, ensure an event is also written            
-            ip_list["illumio_type"] = "illumio:pce:ip_lists"
-            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **ip_list))            
 
         update_set = self._kvstore_union(KVSTORE_IP_LISTS, params, flattened_ip_lists)
         update_kvstore(self.service, KVSTORE_IP_LISTS, update_set)
@@ -476,13 +483,13 @@ class Illumio(Script):
         flattened_services = []
 
         for service in services:
+            # backport from 3.2.3, ensure event is written before flattening it            
+            service["illumio_type"] = "illumio:pce:services"            
+            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **service))            
             flatten_refs(service, "created_by", "updated_by")
 
             # convert service into multiple entries, one for each service definition
-            flattened_services += flatten_service(service, params.pce_fqdn)
-            # backport from 3.2.3, ensure an event is also written            
-            service["illumio_type"] = "illumio:pce:services"
-            ew.write_event(self._pce_event(params, API_METADATA_SOURCETYPE, **service))            
+            flattened_services += flatten_service(service, params.pce_fqdn)                        
 
         update_set = self._kvstore_union(KVSTORE_SERVICES, params, flattened_services)
         update_kvstore(self.service, KVSTORE_SERVICES, update_set)
