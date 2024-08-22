@@ -1,0 +1,195 @@
+<%page args="element, eaiAttributes, widgetstyle" />
+<!--
+This widget stores the search head credentials in the storage/passwords endpoint.
+-->
+
+<div id="search_head_credentials_section" class="widget">
+    <label>Search Head Credentials</label>
+    <div id="cred_inputs">
+        <div class="cred_input_group">
+        </div>
+    </div>
+    <button type="button" onclick="addCredentialsInput()">Add Search Head credentials</button>
+</div>
+
+<script>
+function addCredentialsInput() {
+    var newInputGroup = document.createElement('div');
+    newInputGroup.className = 'cred_input_group';
+
+    var usernameInput = document.createElement('input');
+    usernameInput.type = 'text';
+    usernameInput.name = 'username_fqdn[]';
+    usernameInput.placeholder = 'username@fqdn';
+    usernameInput.setAttribute('aria-required', 'false');
+    usernameInput.setAttribute('autocomplete', 'off');    
+
+    var passwordInput = document.createElement('input');
+    passwordInput.type = 'password';
+    passwordInput.name = 'password[]';
+    passwordInput.placeholder = 'password';
+    passwordInput.setAttribute('aria-required', 'false');
+    passwordInput.setAttribute('autocomplete', 'off');
+
+    var deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.innerText = 'Delete';
+    deleteButton.onclick = function() { removeCredentialsInput(deleteButton); };
+
+
+    newInputGroup.appendChild(usernameInput);
+    newInputGroup.appendChild(passwordInput);
+    newInputGroup.appendChild(deleteButton);
+    
+    document.getElementById('cred_inputs').appendChild(newInputGroup);
+}
+
+function removeCredentialsInput(button) {
+    var inputGroup = button.parentNode;    
+    inputGroup.setAttribute('data-deleted', 'true');
+    inputGroup.style.display = 'none';    
+}
+</script>
+
+
+<script type="text/javascript">
+var secretMask = "*".repeat(64);
+
+var storeCredential = function(realm, username, password) {
+    return $.ajax({
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords?output_mode=json",
+        data: {
+            name: username,
+            password: password,
+            realm: realm
+        },
+        headers: {
+            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+        },
+        type: "POST"
+    });
+}
+
+var updateCredential = function(name, password) {
+    return $.ajax({
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
+        data: {
+            password: password
+        },
+        headers: {
+            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+        },
+        type: "POST"
+    });
+}
+
+var deleteCredential = function(name) {
+    return $.ajax({
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
+
+        headers: {
+            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+        },
+        type: "DELETE"
+    });
+}
+
+var getCredential = function(name) {
+    return $.ajax({
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
+        headers: {
+            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+        },
+        type: "GET"
+    });
+}
+
+var getAllCredentials = function(realm) {
+    return $.ajax({
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords?output_mode=json&search=" + encodeURIComponent(realm),
+        headers: {
+            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+        },
+        type: "GET"
+    });
+}
+
+var createOrUpdateCredential = function(realm, username, password) {
+    storeCredential(realm, username, password)
+    .done(function() {
+        console.log("Successfully stored the credentials");
+    })
+    .fail(function(response) {
+        if(response.status === 409){
+            console.log("Credential exists, updating...");
+
+            var stanzaName = getCredentialName(realm, username);            
+
+            updateCredential(stanzaName, password)
+            .done(function(){
+                console.log("Successfully updated the credentials");
+            })
+            .fail(function(){
+                console.log("Failed to update the credentials");
+            });
+        } else {
+            console.log("Failed to store the credentials, error code: ", response.status);
+        }
+    });
+};
+
+var getCredentialName = function(realm, username){
+    //return realm.replace(":", "\\:") + ":" + $('#api_key_id_id').val().replace(":", "\\:") + ":";
+    return realm.replace(":", "\\:") + ":" + username.replace(":", "\\:") + ":";
+}
+
+$(document).ready(function() {
+    // if editing an existing entry, fetch and mask the stored credentials
+    if($('.ManagerPageTitle').length > 0) {
+        var realm = getRealm("${element['prefix']}");
+
+        // Fetch all stored credentials
+        getAllCredentials(realm).done(function(result) {
+            if (result.entry.length > 0) {
+                // Create input groups for each stored credential
+                result.entry.forEach(function(entry) {
+                    count = 0
+                    var username = entry.name.split(":")[2]; // Extract username from the entry name
+                    var password = secretMask; // Mask the password                    
+                                    
+                    addCredentialsInput(); // Add a new input group
+                    
+                    // Get the last added input group and populate the fields
+                    var lastGroup = $('#cred_inputs .cred_input_group').last();
+                    $(lastGroup).find('input[name="username_fqdn[]"]').val(username);
+                    $(lastGroup).find('input[name="password[]"]').val(password);
+                    count += 1
+
+                    
+                });
+            }
+        });
+    }
+    // store credentials when the form is submitted
+
+    // uncomment this later
+
+    $('form#eaiform.entityEditForm').on('submit', function(e) {
+        console.log("Storing credentials...");
+
+        var realm = getRealm("${element['prefix']}");
+
+        $('#cred_inputs .cred_input_group').each(function(index, group) {
+            var username = $(group).find('input[name="username_fqdn[]"]').val();
+            var password = $(group).find('input[name="password[]"]').val();
+            if ($(group).attr('data-deleted') === 'true') {
+                deleteCredential(getCredentialName(realm, username));
+            } 
+            else if (password !== secretMask) {
+                createOrUpdateCredential(realm, username, password);
+            }
+        });
+    });
+});
+
+</script>
