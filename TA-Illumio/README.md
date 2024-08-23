@@ -18,7 +18,7 @@
 
 The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.  
 
-### Version - 4.0.1  
+### Version - 4.0.2  
 
 **Supported Splunk versions**  
 * 8.1.x
@@ -115,9 +115,10 @@ To create a Service Account API key:
 1. Navigate to Settings -> Data inputs and find the `Illumio` input type
 2. Click the **+ Add New** action to create a new input
 3. Enter a display name for the input and the connection details for your PCE. Enter the Organization ID and API key username and secret values copied from the steps above
-4. (On-prem only) To receive syslog events forwarded from an on-prem PCE, a TCP input must be configured in Splunk. Setting the **Syslog Port (TCP)** value will automatically create one when the input runs if it does not already exist. The **Enable TCP-SSL** option determines whether a `[tcp-ssl]` or `[tcp]` stanza will be created (see below for more details on TCP SSL configuration)
-5. Adjust any of the remaining parameters as needed. Make sure that the index is set correctly (found by selecting the **More settings** checkbox). To enable automated quarantine using the [`illumio_quarantine`](#workload-quarantine-action) action, specify one or more labels that make up a quarantine policy scope in the PCE in the **Quarantine Labels** field
-6. Click **Next**. If an error dialog appears, double-check the field values and refer to the [Troubleshooting](#troubleshooting) section below
+4. (On-prem only) For each search head, input "username@fqdn" and "password". This is to ensure that kvstore files are copied over to the instances.
+5. (On-prem only) To receive syslog events forwarded from an on-prem PCE, a TCP input must be configured in Splunk. Setting the **Syslog Port (TCP)** value will automatically create one when the input runs if it does not already exist. The **Enable TCP-SSL** option determines whether a `[tcp-ssl]` or `[tcp]` stanza will be created (see below for more details on TCP SSL configuration)
+6. Adjust any of the remaining parameters as needed. Make sure that the index is set correctly (found by selecting the **More settings** checkbox). To enable automated quarantine using the [`illumio_quarantine`](#workload-quarantine-action) action, specify one or more labels that make up a quarantine policy scope in the PCE in the **Quarantine Labels** field
+7. Click **Next**. If an error dialog appears, double-check the field values and refer to the [Troubleshooting](#troubleshooting) section below
 
 **TCP SSL Configuration**  
 
@@ -171,6 +172,12 @@ index=illumio_index sourcetype="illumio:pce" "Testing syslog connection from PCE
 6. Each input should specify a Log File/S3 Key Prefix with the path to either auditable or collector event logs within the S3 bucket
 
 ## Upgrade Steps  
+
+### v4.0.1 to v4.0.2
+
+* No additional steps required. 
+* If updating manually via zip file, update the TA in-place following the installation.
+* Restart splunk.
 
 ### v3.2.3 to >= v4.0.0  
 
@@ -323,6 +330,17 @@ If data is not showing up in the `illumio_*` metadata stores
 * Check `$SPLUNK_HOME/var/log/splunk/mongod.log` for any startup or runtime errors with mongodb
 * Call the [Splunk API endpoint](https://dev.splunk.com/enterprise/docs/developapps/manageknowledge/kvstore/usetherestapitomanagekv/) for the collection to check if objects are being stored
 * Check that the `transforms.conf` stanza for the collection lookup is configured correctly
+* (For v4.0.2 onwards only)
+  * Ensure search head credentials are intact. 
+  * To check whether collections defined in TA-Illumio are being copied to remote search heads, look for the following in splunkd.log
+  ```
+   "Stats for copy collection"
+  ```
+
+    In search, type the following to check if any of the lookups have data in HF and repeat the same command on remote search head
+  ```
+  | inputlookup illumio_workloads_lookup
+  ```
 
 ### Testing the PCE Connection  
 
@@ -373,6 +391,11 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 4. Restart Splunk
 
 ## Release Notes  
+
+### Version 4.0.2  
+
+* Added support for copying kvstore files to remote search head nodes.  
+* User can provide search head credentials in the format of "username@fqdn" and "password" in the modular input.
 
 ### Version 4.0.1  
 

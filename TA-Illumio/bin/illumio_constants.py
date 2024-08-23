@@ -37,3 +37,8 @@ QUARANTINE_ACTION_NAME = "illumio_quarantine"
 QUARANTINE_ACTION_ROLE = "illumio_quarantine_workload"
 SUCCESS_STATUS = "success"
 FAILURE_STATUS = "failure"
+
+ILLUMIO_APP = "IllumioAppforSplunk"
+ILLUMIO_TA = "TA-Illumio"
+
+SEARCH_HEAD_CREDENTIALS_PREFIX = "kvstore"

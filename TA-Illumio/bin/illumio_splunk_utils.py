@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+
+"""
+Copyright:
+    © 2024 Illumio
+License:
+    Apache2, see LICENSE for more details.
+"""
+
 import json
 import sys
 from pathlib import Path
@@ -30,6 +39,34 @@ def get_password(service: client.Service, name: str) -> str:
             return entries[0]["content"]["clear_password"]
     except Exception as e:
         raise Exception(f"Failed to retrieve password {name} from storage/passwords: {e}")
+
+
+def get_credentials_for_search_heads(service: client.Service) -> dict:
+    """_summary_
+
+    Args:
+        service (client.Service): _description_
+        realm (str): _description_
+
+    Returns:
+        dict: _description_
+    """
+
+    try:
+        storage_passwords = service.storage_passwords
+        credentials = {}
+        for entry in storage_passwords.list():
+            # The reason SEARCH_HEAD_CREDENTIALS_PREFIX is used here, is kvstore is the prefix for storing search head credentials
+            if SEARCH_HEAD_CREDENTIALS_PREFIX in entry.name:
+                user_fqdn = entry["content"]["username"]
+                user, fqdn = user_fqdn.split("@")
+                credentials[fqdn] = {
+                    "username": user,
+                    "password": entry["content"]["clear_password"],
+                }
+        return credentials
+    except Exception as e:
+        raise Exception(f"Failed to retrieve from storage/passwords: {e}")
 
 
 def update_kvstore(service: client.Service, name: str, objs: List[dict]) -> None:
@@ -109,4 +146,5 @@ __all__ = [
     "update_kvstore",
     "get_tcp_input",
     "create_tcp_input",
+    "get_credentials_for_search_heads",
 ]

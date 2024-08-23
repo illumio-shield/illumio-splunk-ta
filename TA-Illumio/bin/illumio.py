@@ -20,7 +20,7 @@ from typing import List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from illumio import PolicyComputeEngine, validate_int, PORT_MAX, ACTIVE
-
+from illumio_kvstore_upload import KVStoreUpload
 import splunklib.client as client
 from splunklib.modularinput import (
     Script,
@@ -280,6 +280,7 @@ class Illumio(Script):
             inputs (any): script inputs and metadata.
             ew (EventWriter): Event writer object.
         """
+
         for input_name, input_item in inputs.inputs.items():
             # we can't pass the __app field to the dataclass as private member
             # variables are not allowed, so pop it out of the dict here
@@ -321,6 +322,9 @@ class Illumio(Script):
                 # to pull workloads from each Supercluster member
                 supercluster = Supercluster(connect_to_pce(params), pce_status)
 
+                # In case of enterprise deployment, the following will apply
+                remote_kvstore_upload = KVStoreUpload(self.service, ew)
+
                 with ThreadPoolExecutor() as exec:
                     tasks = (
                         (self._store_labels, pce, params),
@@ -332,6 +336,8 @@ class Illumio(Script):
                     futures = (exec.submit(*task) for task in tasks)
                     for future in as_completed(futures):
                         ew.write_event(future.result())
+
+                remote_kvstore_upload.upload_collections()
             except Exception as e:
                 ew.log(EventWriter.ERROR, f"{log_prefix} Error running Illumio input: {e}")
                 ew.log(EventWriter.ERROR, f"{log_prefix} Traceback: {traceback.format_exc()}")
@@ -354,7 +360,9 @@ class Illumio(Script):
             sourcetype=sourcetype,
         )
 
-    def _metadata_event(self, params: IllumioInputParameters, type_: str, object_count: int) -> Event:
+    def _metadata_event(
+        self, params: IllumioInputParameters, type_: str, object_count: int
+    ) -> Event:
         """Constructs a PCE metadata Event object.
 
         Args:
@@ -554,7 +562,9 @@ class Illumio(Script):
 
         return self._metadata_event(params, ILO_TYPE_RULE_SETS, len(rule_sets))
 
-    def _kvstore_union(self, name: str, params: IllumioInputParameters, new: List[dict]) -> List[dict]:
+    def _kvstore_union(
+        self, name: str, params: IllumioInputParameters, new: List[dict]
+    ) -> List[dict]:
         """Unifies old KVStore records with the updated list from the PCE.
 
         Marks any objects in the KVStore that are no longer on the PCE as

@@ -28,6 +28,21 @@ If no port is specified, :443 is assumed. Example value: https://my.pce.com:8443
       <key name="prefix">illumio://</key>
       <key name="keyExampleText">Illumio API key username. Example value: 'api_145a5c788e63c30a3'</key>
     </element>
+    <element name="search_head_config" type="fieldset">
+      <view name="edit"/>
+      <view name="create"/>
+      <key name="legend">Search head configuration</key>
+      <key name="helpText">Enter fqdn and username in the format username@fqdn and password of splunk search head instance. This setting is only applicable to Splunk Enterprise deployment.</key>
+
+      <elements>
+        <element name="search_head_cred_storage" type="search_head_storage" label="Search Head Credentials">
+          <view name="edit"/>
+          <view name="list"/>
+          <view name="create"/>      
+          <key name="prefix">kvstore://</key>        
+        </element>
+      </elements>    
+    </element>
     <element name="tcp_settings" type="fieldset">
       <view name="edit"/>
       <view name="create"/>
