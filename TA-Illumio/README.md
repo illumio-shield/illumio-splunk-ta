@@ -18,7 +18,7 @@
 
 The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.  
 
-### Version - 4.0.2  
+### Version - 4.0.3  
 
 **Supported Splunk versions**  
 * 8.1.x
@@ -31,6 +31,8 @@ The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrat
 * 22.2.x
 * 22.5.x
 * 23.2.x
+* 23.5.x
+* 24.2.x
 * Illumio SaaS PCE (latest)
 
 **Supported Splunk Common Information Model (CIM) versions**  
@@ -172,6 +174,12 @@ index=illumio_index sourcetype="illumio:pce" "Testing syslog connection from PCE
 6. Each input should specify a Log File/S3 Key Prefix with the path to either auditable or collector event logs within the S3 bucket
 
 ## Upgrade Steps  
+
+### v4.0.2 to v4.0.3
+
+* No additional steps required. 
+* If updating manually via zip file, update the TA in-place following the installation.
+* Restart splunk.
 
 ### v4.0.1 to v4.0.2
 
@@ -391,6 +399,10 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 4. Restart Splunk
 
 ## Release Notes  
+
+### Version 4.0.3
+* Updated Splunk SDK to 2.1.0
+* Updated datatypes in collections.conf to use only string, number, bool and time as per Spunk Cloud vetting standards
 
 ### Version 4.0.2  
 
