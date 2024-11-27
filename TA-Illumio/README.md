@@ -10,6 +10,9 @@
 
 # Release Notes
 
+* **Version 3.2.4**
+    * Update Splunk SDK version to latest (2.1.0)
+
 * **Version 3.2.3**
     * Update Splunk SDK version to latest (1.7.3)
 
@@ -169,6 +172,9 @@
 * To get the required eventgen.conf, contact over provided support email below.
 
 # Upgrade
+
+### From v3.2.3 to v3.2.4
+* No steps required.
 
 ### From v3.2.2 to v3.2.3
 * No steps required.
