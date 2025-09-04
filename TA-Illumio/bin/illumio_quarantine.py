@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module provides a ModularAction for quarantining workloads in the PCE.
 
 Copyright:
@@ -7,7 +5,6 @@ Copyright:
 License:
     Apache2, see LICENSE for more details.
 """
-from builtins import str
 import csv
 import codecs
 import gzip
@@ -28,6 +25,9 @@ from illumio import PolicyComputeEngine
 from illumio_constants import *
 from illumio_pce_utils import *
 from illumio_splunk_utils import *
+
+import json
+import traceback
 
 logger = ModularAction.setup_logger(f"{QUARANTINE_ACTION_NAME}_modalert")
 
@@ -118,7 +118,7 @@ class IllumioQuarantineAction(ModularAction):
             sleep(.2)
         return JSONResultsReader(job.results(output_mode="json"))
 
-    def _get_illumio_input_stanza(self) -> Tuple[str, dict]:
+    def _get_illumio_input_stanza(self) -> tuple[str, dict]:
         """Returns the illumio modinput stanza matching the configured pce_fqdn and org_id"""
         for conf in self.service.confs["inputs"]:
             if conf.name.startswith("illumio://"):
@@ -126,9 +126,11 @@ class IllumioQuarantineAction(ModularAction):
                     return conf.name, conf.content
         raise Exception(f"no input stanza with pce_fqdn={self.pce_fqdn} and org_id={self.org_id}")
 
-    def _get_label_hrefs(self, pce: PolicyComputeEngine) -> List[str]:
+    def _get_label_hrefs(self, pce: PolicyComputeEngine) -> list[str]:
         """Retrieves HREFs for configured label key:value pairs"""
         label_hrefs = []
+        if self.params.quarantine_labels is None:
+            raise Exception("no quarantine labels provided")
         kv_pairs = parse_label_scope(self.params.quarantine_labels)
 
         for k, v in kv_pairs.items():

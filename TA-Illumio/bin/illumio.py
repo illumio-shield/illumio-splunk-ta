@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module provides the modular input for the Illumio TA.
 
 The input accesses the Illumio API and retrieves data from the PCE.
@@ -15,7 +13,6 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
@@ -563,8 +560,8 @@ class Illumio(Script):
         return self._metadata_event(params, ILO_TYPE_RULE_SETS, len(rule_sets))
 
     def _kvstore_union(
-        self, name: str, params: IllumioInputParameters, new: List[dict]
-    ) -> List[dict]:
+        self, name: str, params: IllumioInputParameters, new: list[dict]
+    ) -> list[dict]:
         """Unifies old KVStore records with the updated list from the PCE.
 
         Marks any objects in the KVStore that are no longer on the PCE as

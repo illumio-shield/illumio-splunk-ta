@@ -9,3 +9,6 @@ pre-commit==2.21.0
 future
 urllib3
 pyupgrade
+pyupgrade
+splunk-appinspect
+splunk-packaging-toolkit

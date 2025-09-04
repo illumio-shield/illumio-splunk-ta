@@ -369,7 +369,7 @@ When an `Illumio` modular input is created, the connection to the PCE is validat
 The `illumio_connection_test.py` script is provided as a way to validate the PCE connection from the command line:  
 
 ```
-> python $SPLUNK_HOME/etc/apps/TA-Illumio/bin/illumio_connection_test.py
+> $SPLUNK_HOME/bin/splunk cmd python $SPLUNK_HOME/etc/apps/TA-Illumio/bin/illumio_connection_test.py
 Enter PCE hostname: my.pce.com
 Enter PCE port: 8443
 Enter PCE org ID: 1

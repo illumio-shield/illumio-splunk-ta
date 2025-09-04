@@ -869,7 +869,7 @@ class ModularAction(object):
 
     @staticmethod
     def setup_logger(
-        name, level=logging.INFO, maxBytes=25000000, backupCount=5, format=SHORT_FORMAT
+        name, level=logging.DEBUG, maxBytes=25000000, backupCount=5, format=SHORT_FORMAT
     ):
         """Set up a logging instance.
 

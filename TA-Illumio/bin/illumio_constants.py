@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module provides constant values for the TA.
 
 Copyright:

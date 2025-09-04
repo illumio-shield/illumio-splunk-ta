@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module provides helper utilities for the Illumio TA.
 
 Copyright:
@@ -52,7 +50,7 @@ class PCEConnectionConfig:
         Returns:
             tuple: of the form (fqdn, port)
         """
-        pattern = re.compile("^\w+://")
+        pattern = re.compile(r"^\w+://")
         if not re.match(pattern, url):
             url = f"https://{url}"
         parsed = urlparse(url)
@@ -104,7 +102,7 @@ class IllumioInputParameters(PCEConnectionConfig):
 
 
 class Supercluster(PolicyComputeEngine):
-    def __init__(self, pce: PolicyComputeEngine, pce_status: List[dict]):
+    def __init__(self, pce: PolicyComputeEngine, pce_status: list[dict]):
         """PolicyComputeEngine subclass representing an Illumio Supercluster.
 
         Inherits from an existing PCE instance and determines the Supercluster
@@ -125,12 +123,12 @@ class Supercluster(PolicyComputeEngine):
             elif cluster_type == "member":
                 self.members.append(cluster["fqdn"])
 
-    def __new__(cls, pce: PolicyComputeEngine, sc_status: List[dict]):
+    def __new__(cls, pce: PolicyComputeEngine, sc_status: list[dict]):
         """Wrap the passed PolicyComputeEngine instance."""
         pce.__class__ = cls
         return pce
 
-    def get_workloads(self) -> List[dict]:
+    def get_workloads(self) -> list[dict]:
         """Retrieves workloads from all Supercluster members.
 
         VEN uptime and last_heartbeat_at metadata is not replicated across the
@@ -262,7 +260,7 @@ def getprotobynum(proto_num: int) -> str:
     if proto_num is None:
         return ""
     if not IANA_PROTO_LOOKUP:
-        with open(str(LOOKUPS_DIR / "protocol_numbers.csv"), "r") as f:
+        with open(str(LOOKUPS_DIR / "protocol_numbers.csv")) as f:
             IANA_PROTO_LOOKUP = dict(csv.reader(f))
     return IANA_PROTO_LOOKUP.get(proto_num, "unknown").lower()
 
@@ -302,7 +300,7 @@ def flatten_refs(o: dict, *keys: str):
             o[k] = href_from(o[k])
 
 
-def flatten_ingress_services(services: List[dict]) -> List[str]:
+def flatten_ingress_services(services: list[dict]) -> list[str]:
     """Flattens the given ingress service entries into a string list.
 
     Service HREF objects simplify to the HREF string, and port ranges are
@@ -348,7 +346,7 @@ def flatten_ingress_services(services: List[dict]) -> List[str]:
     return flattened_services
 
 
-def flatten_scope(scope: List[dict]) -> dict:
+def flatten_scope(scope: list[dict]) -> dict:
     """Given a rule set or rule scope, flattens it into a dictionary.
 
     Rule set scopes are lists of lists defining one or more sets of label
@@ -428,7 +426,7 @@ def flatten_scope(scope: List[dict]) -> dict:
     return flattened_actors
 
 
-def flatten_rules(rule_set: dict) -> List[dict]:
+def flatten_rules(rule_set: dict) -> list[dict]:
     """Given a rule set object, extracts and flattens all contained rules.
 
     Rules, IP tables rules, and deny rules are combined in a single KVStore
@@ -468,7 +466,7 @@ def flatten_rules(rule_set: dict) -> List[dict]:
     return rules
 
 
-def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
+def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> list[dict]:
     """Flattens a given IP list object into multiple entries.
 
     An entry is created for each IP range in the IP list object. Each entry
@@ -511,7 +509,7 @@ def flatten_ip_list(ip_list: dict, pce_fqdn: str) -> List[dict]:
     return ip_list_entries
 
 
-def flatten_service(service: dict, pce_fqdn: str) -> List[dict]:
+def flatten_service(service: dict, pce_fqdn: str) -> list[dict]:
     """Flattens a given service object into multiple entries.
 
     An entry is created for each service definition in the Service object.
