@@ -30,6 +30,6 @@ build/
 **/*.tar.gz
 **/*.tgz
 
-lib/
+/lib/
 bin/
 pyvenv.cfg
