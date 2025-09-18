@@ -18,13 +18,14 @@
 
 The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.  
 
-### Version - 4.0.3  
+### Version - 4.1.0  
 
 **Supported Splunk versions**  
-* 8.1.x
-* 8.2.x
+
 * 9.0.x
 * 9.1.x
+* 10.0.x
+* 10.1.x
 
 **Supported versions of the Illumio Policy Compute Engine (PCE)**  
 * 21.5.x
@@ -36,8 +37,8 @@ The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrat
 * Illumio SaaS PCE (latest)
 
 **Supported Splunk Common Information Model (CIM) versions**  
-* 4.x
 * 5.x
+* 6.x
 
 ## Splunk Architecture  
 
@@ -400,7 +401,16 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ## Release Notes  
 
+### Version 4.1.0
+
+* Illumio App for Splunk & Illumio Technology Add-On for Splunk apps are now Splunk 10 compatible. 
+* illumio_quarantine command has been fixed for both Splunk Enterprise and Splunk Cloud.
+* Traffic Explorer is now updated to use with Dashboard Studio.
+* All python scripts in TA have been updated to use Python 3.9.
+* Any missing src_labels & dst_labels in PCE traffic events will be default to "-".
+
 ### Version 4.0.3
+
 * Updated Splunk SDK to 2.1.0
 * Updated datatypes in collections.conf to use only string, number, bool and time as per Spunk Cloud vetting standards
 
