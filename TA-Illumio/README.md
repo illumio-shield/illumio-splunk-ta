@@ -21,24 +21,22 @@ The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrat
 ### Version - 4.1.0  
 
 **Supported Splunk versions**  
-
-* 9.0.x
-* 9.1.x
-* 10.0.x
 * 10.1.x
+* 10.0.x
+* 9.1.x
+* 9.0.x
 
 **Supported versions of the Illumio Policy Compute Engine (PCE)**  
-* 21.5.x
-* 22.2.x
-* 22.5.x
-* 23.2.x
-* 23.5.x
-* 24.2.x
 * Illumio SaaS PCE (latest)
+* 25.2.x
+* 24.2.x
+* 23.5.x
+* 23.2.x
+* 22.5.x
 
 **Supported Splunk Common Information Model (CIM) versions**  
-* 5.x
 * 6.x
+* 5.x
 
 ## Splunk Architecture  
 
