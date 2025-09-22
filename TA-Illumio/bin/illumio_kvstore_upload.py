@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module provides kvstore support for the TA.
 
 Copyright:
@@ -8,8 +6,6 @@ License:
     Apache2, see LICENSE for more details.
 """
 
-from __future__ import print_function
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -65,7 +61,7 @@ class KVStoreUpload:
             try:
                 remote_host = host
                 remote_port = self.targetport
-                remote_uri = "https://%s:%s" % (remote_host, remote_port)
+                remote_uri = "https://{}:{}".format(remote_host, remote_port)
 
                 remote_service = client.connect(
                     host=remote_host,

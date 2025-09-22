@@ -18,25 +18,24 @@
 
 The [Illumio Add-on for Splunk](https://splunkbase.splunk.com/app/3657) integrates with the Illumio Policy Compute Engine (PCE). It enriches Illumio data with Common Information Model (CIM) fields for compatibility with other Splunk products and add-ons.  
 
-### Version - 4.0.3  
+### Version - 4.1.0  
 
 **Supported Splunk versions**  
-* 8.1.x
-* 8.2.x
-* 9.0.x
+* 10.1.x
+* 10.0.x
 * 9.1.x
+* 9.0.x
 
 **Supported versions of the Illumio Policy Compute Engine (PCE)**  
-* 21.5.x
-* 22.2.x
-* 22.5.x
-* 23.2.x
-* 23.5.x
-* 24.2.x
 * Illumio SaaS PCE (latest)
+* 25.2.x
+* 24.2.x
+* 23.5.x
+* 23.2.x
+* 22.5.x
 
 **Supported Splunk Common Information Model (CIM) versions**  
-* 4.x
+* 6.x
 * 5.x
 
 ## Splunk Architecture  
@@ -369,7 +368,7 @@ When an `Illumio` modular input is created, the connection to the PCE is validat
 The `illumio_connection_test.py` script is provided as a way to validate the PCE connection from the command line:  
 
 ```
-> python $SPLUNK_HOME/etc/apps/TA-Illumio/bin/illumio_connection_test.py
+> $SPLUNK_HOME/bin/splunk cmd python $SPLUNK_HOME/etc/apps/TA-Illumio/bin/illumio_connection_test.py
 Enter PCE hostname: my.pce.com
 Enter PCE port: 8443
 Enter PCE org ID: 1
@@ -400,7 +399,16 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ## Release Notes  
 
+### Version 4.1.0
+
+* Illumio App for Splunk & Illumio Technology Add-On for Splunk apps are now Splunk 10 compatible. 
+* illumio_quarantine command has been fixed for both Splunk Enterprise and Splunk Cloud.
+* Traffic Explorer is now updated to use with Dashboard Studio.
+* All python scripts in TA have been updated to use Python 3.9.
+* Any missing src_labels & dst_labels in PCE traffic events will be default to "-".
+
 ### Version 4.0.3
+
 * Updated Splunk SDK to 2.1.0
 * Updated datatypes in collections.conf to use only string, number, bool and time as per Spunk Cloud vetting standards
 

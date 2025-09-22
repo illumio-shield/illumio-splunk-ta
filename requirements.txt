@@ -1,2 +1,4 @@
 # external libs
 illumio>=1.1.3
+deprecation>=2.1.0
+splunklib>=1.0.0
