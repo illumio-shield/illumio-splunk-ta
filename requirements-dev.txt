@@ -8,3 +8,6 @@ black==23.3.0
 pre-commit==2.21.0
 future
 urllib3
+pyupgrade
+splunk-appinspect
+splunk-packaging-toolkit

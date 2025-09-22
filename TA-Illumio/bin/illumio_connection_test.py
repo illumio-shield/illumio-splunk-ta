@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """This module is used to test connectivity to the Illumio PCE.
 
 Copyright:
