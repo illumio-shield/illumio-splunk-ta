@@ -31,5 +31,5 @@ build/
 **/*.tgz
 
 /lib/
-bin/
+/bin/
 pyvenv.cfg
