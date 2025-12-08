@@ -126,7 +126,7 @@ class IllumioQuarantineAction(ModularAction):
                     return conf.name, conf.content
         raise Exception(f"no input stanza with pce_fqdn={self.pce_fqdn} and org_id={self.org_id}")
 
-    def _get_label_hrefs(self, pce: PolicyComputeEngine) -> list[str]:
+    def _get_label_hrefs(self, pce: PolicyComputeEngine) -> List[str]:
         """Retrieves HREFs for configured label key:value pairs"""
         label_hrefs = []
         if self.params.quarantine_labels is None:
