@@ -8,7 +8,7 @@ License:
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
@@ -67,7 +67,7 @@ def get_credentials_for_search_heads(service: client.Service) -> dict:
         raise Exception(f"Failed to retrieve from storage/passwords: {e}")
 
 
-def update_kvstore(service: client.Service, name: str, objs: list[dict]) -> None:
+def update_kvstore(service: client.Service, name: str, objs: List[dict]) -> None:
     """Updates a specified KVStore with the given PCE objects.
 
     Any existing KVStore data is removed and replaced to avoid stale state.
