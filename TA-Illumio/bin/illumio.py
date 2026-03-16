@@ -168,6 +168,18 @@ class Illumio(Script):
             )
         )
 
+        # This proxy setting is used only for the Splunk REST API requests made during KV-store upload.
+        scheme.add_argument(
+            Argument(
+                name="proxy",
+                title="Proxy",
+                description="Optional proxy address for Splunk REST API requests used during KV-store upload",
+                data_type=Argument.data_type_string,
+                required_on_create=False,
+                required_on_edit=False,
+            )
+        )
+
         scheme.add_argument(
             Argument(
                 name="http_retry_count",
@@ -321,7 +333,10 @@ class Illumio(Script):
                 supercluster = Supercluster(connect_to_pce(params), pce_status)
 
                 # In case of enterprise deployment, the following will apply
-                remote_kvstore_upload = KVStoreUpload(self.service, ew)
+                # Pass the optional KV-store upload proxy from the input stanza into the upload helper.
+                remote_kvstore_upload = KVStoreUpload(
+                    self.service, ew, params.proxy, params.name
+                )
 
                 with ThreadPoolExecutor() as exec:
                     tasks = (

@@ -76,7 +76,7 @@ def getCollections(uri, session_key, selected_app, ew=None) -> list:
     return collections
 
 
-def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
+def deleteCollection(ew, remote_uri, remote_session_key, app, collection, proxy=None):
     """Deletes the collection on remote_uri
 
     Args:
@@ -109,7 +109,8 @@ def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
 
     # Delete the collection contents
     try:
-        response, response_code = request("DELETE", delete_url, "", headers)
+        # Use the optional proxy for the target-side delete request when configured.
+        response, response_code = request("DELETE", delete_url, "", headers, proxy=proxy)
         ew.log(
             EventWriter.DEBUG,
             f"Server response for collection deletion: {delete_url} {response_code} {response}",
@@ -122,7 +123,7 @@ def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
 
 
 def copyCollection(
-    ew, source_session_key, source_uri, target_session_key, target_uri, app, collection
+    ew, source_session_key, source_uri, target_session_key, target_uri, app, collection, proxy=None
 ) -> dict:
     """
     Copy collection from local system to remote system
@@ -182,7 +183,10 @@ def copyCollection(
 
         # Delete the target collection prior to uploading
         delete_dt = time.time()
-        response_code = deleteCollection(ew, target_uri, target_session_key, app, collection)
+        # Use the same optional proxy for the target-side delete that is already used for upload.
+        response_code = deleteCollection(
+            ew, target_uri, target_session_key, app, collection, proxy
+        )
 
         ew.log(
             EventWriter.INFO,
@@ -191,8 +195,9 @@ def copyCollection(
 
         if result == "success":
             upload_dt = time.time()
+            # Pass the optional proxy only to the upload step that sends KV-store data to the remote Splunk REST API.
             result, _, posted = uploadCollection(
-                ew, target_uri, target_session_key, app, collection, output_file
+                ew, target_uri, target_session_key, app, collection, output_file, proxy
             )
             ew.log(
                 EventWriter.DEBUG,
@@ -207,9 +212,10 @@ def copyCollection(
         if os.path.exists(output_file):
             os.remove(output_file)
 
-        if delete_dt > 0:
+        # Only convert timing values that were actually initialized for this copy run.
+        if delete_dt is not None and delete_dt > 0:
             delete_dt = str(timedelta(seconds=(time.time() - delete_dt)))
-        if upload_dt > 0:
+        if upload_dt is not None and upload_dt > 0:
             upload_dt = str(timedelta(seconds=(time.time() - upload_dt)))
 
         stats = {
@@ -224,6 +230,8 @@ def copyCollection(
         }
 
         ew.log(EventWriter.INFO, f"Stats for copy collection {collection} is {stats}")
+        # Return the collected copy stats so callers can verify the end-to-end result.
+        return stats
 
     except BaseException as e:
         raise Exception(
@@ -369,7 +377,7 @@ def downloadCollection(
     return result, message, total_record_count
 
 
-def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_path):
+def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_path, proxy=None):
     # Set request headers
     headers = {
         "Authorization": "Splunk %s" % remote_session_key,
@@ -452,8 +460,9 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
 
         # Upload the restored records to the server
         try:
+            # Apply the optional proxy from the input stanza only when it was configured.
             _, response_code = request(
-                "POST", record_url, json.dumps(batch), headers
+                "POST", record_url, json.dumps(batch), headers, proxy=proxy
             )  # pylint: disable=unused-variable
             batch_number += 1
             posted += len(batch)
