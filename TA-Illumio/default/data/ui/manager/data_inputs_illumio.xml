@@ -126,11 +126,11 @@ If a TCP input with the configured port does not exist, one will be created. If 
           <key name="exampleText">Optional HTTPS proxy address</key>
         </element>
         <!-- This proxy is for Splunk REST API requests on port 8089 used during KV-store upload. -->
-        <element name="proxy" label="Proxy">
+        <element name="proxy" label="KV Store Replication Proxy">
           <view name="edit"/>
           <view name="create"/>
           <!-- This input is optional. Blank means KV-store upload requests are sent directly without a proxy. -->
-          <key name="exampleText">Optional proxy address for Splunk REST API requests used during KV-store upload. Leave blank to connect directly.</key>
+          <key name="exampleText">Route Splunk REST API requests through an optional basic auth proxy during KV Store replication in Search Heads. Leave blank to connect directly. Example: http://user:pass@proxy.company.com:8080</key>
         </element>
         <element name="http_retry_count" label="HTTP Retry Count">
           <view name="edit"/>
