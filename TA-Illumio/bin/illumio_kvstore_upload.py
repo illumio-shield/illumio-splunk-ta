@@ -38,7 +38,7 @@ class KVStoreUpload:
 
     """
 
-    def __init__(self, service, ew) -> None:
+    def __init__(self, service, ew, proxy=None, input_name=None) -> None:
         self.app = ILLUMIO_TA
         self.collection = None
         self.target = None  # either a list of SH nodes or a single SH node
@@ -46,9 +46,13 @@ class KVStoreUpload:
         self.ew = ew
         self.local_server_uri = f"{service.scheme}://{service.host}:{service.port}"
         self.service = service
+        # Store the optional proxy so it can be passed to the KV-store upload request path.
+        self.proxy = proxy
+        # Keep the current input name so only this stanza's search head credentials are used.
+        self.input_name = input_name
 
     def upload_collections(self):
-        credentials = get_credentials_for_search_heads(self.service)
+        credentials = get_credentials_for_search_heads(self.service, self.input_name)
 
         for host, cred in credentials.items():
             try:
@@ -94,6 +98,7 @@ class KVStoreUpload:
                     remote_uri,
                     collection_app,
                     collection_name,
+                    self.proxy,
                 )
 
 

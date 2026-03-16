@@ -39,12 +39,12 @@ def get_password(service: client.Service, name: str) -> str:
         raise Exception(f"Failed to retrieve password {name} from storage/passwords: {e}")
 
 
-def get_credentials_for_search_heads(service: client.Service) -> dict:
+def get_credentials_for_search_heads(service: client.Service, input_name: str) -> dict:
     """_summary_
 
     Args:
         service (client.Service): _description_
-        realm (str): _description_
+        input_name (str): data input name used to scope the search head credential realm.
 
     Returns:
         dict: _description_
@@ -53,11 +53,17 @@ def get_credentials_for_search_heads(service: client.Service) -> dict:
     try:
         storage_passwords = service.storage_passwords
         credentials = {}
+        # Scope the credential lookup to the current input so one stanza cannot pick up another stanza's
+        # search head credentials from storage/passwords.
+        credential_realm = f"{SEARCH_HEAD_CREDENTIALS_PREFIX}://{input_name.replace('illumio://', '')}"
         for entry in storage_passwords.list():
             # The reason SEARCH_HEAD_CREDENTIALS_PREFIX is used here, is kvstore is the prefix for storing search head credentials
-            if SEARCH_HEAD_CREDENTIALS_PREFIX in entry.name:
+            if entry["content"].get("realm") == credential_realm:
                 user_fqdn = entry["content"]["username"]
-                user, fqdn = user_fqdn.split("@")
+                # Skip malformed search head credentials instead of failing the entire modular input run.
+                if "@" not in user_fqdn:
+                    continue
+                user, fqdn = user_fqdn.split("@", 1)
                 credentials[fqdn] = {
                     "username": user,
                     "password": entry["content"]["clear_password"],

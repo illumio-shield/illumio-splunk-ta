@@ -36,6 +36,8 @@ class PCEConnectionConfig:
         self.ca_cert_path = kwargs.get("ca_cert_path")
         self.http_proxy = kwargs.get("http_proxy")
         self.https_proxy = kwargs.get("https_proxy")
+        # Read the optional KV-store upload proxy from the input stanza.
+        self.proxy = kwargs.get("proxy")
         self.http_retry_count = int(kwargs.get("http_retry_count") or 5)
         self.http_request_timeout = int(kwargs.get("http_request_timeout") or 30)
 
