@@ -53,19 +53,44 @@ class KVStoreUpload:
 
     def upload_collections(self):
         credentials = get_credentials_for_search_heads(self.service, self.input_name)
+        input_name = (self.input_name or "").replace("illumio://", "")
+
+        if not credentials:
+            self.ew.log(
+                EventWriter.INFO,
+                f"KV-store replication skipped for input '{input_name}': no remote search head credentials found.",
+            )
+            return
+
+        local_collection_list = getCollections(
+            self.local_server_uri, self.service.token, self.app, self.ew
+        )
+        self.ew.log(EventWriter.INFO, f"Collections to push: {str(local_collection_list)}")
+        self.ew.log(
+            EventWriter.INFO,
+            f"KV-store replication targets for input '{input_name}': {', '.join(sorted(credentials))}",
+        )
 
         for host, cred in credentials.items():
             try:
                 remote_user = cred["username"]
                 remote_password = cred["password"]
+                remote_port = cred.get("port") or self.targetport
 
             except KeyError as k:
-                self.ew.log(EventWriter.ERROR, f"Credential is incorrectly processed {k}")
+                self.ew.log(
+                    EventWriter.ERROR,
+                    f"Skipping KV-store replication target '{host}' for input '{input_name}': malformed credential entry ({k}).",
+                )
+                continue
 
             try:
                 remote_host = host
-                remote_port = self.targetport
                 remote_uri = "https://{}:{}".format(remote_host, remote_port)
+                self.ew.log(
+                    EventWriter.INFO,
+                    f"Attempting KV-store replication login for input '{input_name}' to search head '{remote_host}:{remote_port}' as user '{remote_user}'.",
+                )
 
                 remote_service = client.connect(
                     host=remote_host,
@@ -76,19 +101,26 @@ class KVStoreUpload:
                 remote_service.login()
 
                 remote_session_key = remote_service.token.replace("Splunk ", "")
+                self.ew.log(
+                    EventWriter.INFO,
+                    f"Established KV-store replication session for input '{input_name}' to search head '{remote_host}:{remote_port}'.",
+                )
 
-            except (urllib.error.HTTPError, BaseException) as e:
-                self.ew.log(EventWriter.ERROR, f"Failed to login: {e}")
-
-            local_collection_list = getCollections(
-                self.local_server_uri, self.service.token, self.app, self.ew
-            )
-            self.ew.log(EventWriter.INFO, f"Collections to push: {str(local_collection_list)}")
+            except (urllib.error.HTTPError, Exception) as e:
+                self.ew.log(
+                    EventWriter.ERROR,
+                    f"Skipping KV-store replication for input '{input_name}' to search head '{remote_host}:{remote_port}': login failed ({e}).",
+                )
+                continue
 
             for local_collection in local_collection_list:
                 # Extract the app and collection name from the array
                 collection_app = local_collection[0]
                 collection_name = local_collection[1]
+                self.ew.log(
+                    EventWriter.INFO,
+                    f"Replicating KV-store collection '{collection_app}/{collection_name}' for input '{input_name}' to search head '{remote_host}:{remote_port}'.",
+                )
 
                 copyCollection(
                     self.ew,
