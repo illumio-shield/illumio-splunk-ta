@@ -64,9 +64,24 @@ def get_credentials_for_search_heads(service: client.Service, input_name: str) -
                 if "@" not in user_fqdn:
                     continue
                 user, fqdn = user_fqdn.split("@", 1)
+                user = user.strip()
+                fqdn = fqdn.strip().rstrip("/")
+                if not user or not fqdn:
+                    continue
+                port = None
+                if ":" in fqdn:
+                    if fqdn.count(":") != 1:
+                        continue
+                    fqdn, port_text = fqdn.rsplit(":", 1)
+                    if not fqdn or not port_text.isdigit():
+                        continue
+                    port = int(port_text)
+                    if port < 1 or port > 65535:
+                        continue
                 credentials[fqdn] = {
                     "username": user,
                     "password": entry["content"]["clear_password"],
+                    "port": port if port else None,
                 }
         return credentials
     except Exception as e:
