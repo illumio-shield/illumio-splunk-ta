@@ -12,7 +12,9 @@ import pytest
 
 # Add the TA lib directory so the integration test can import the KV-store modules directly.
 LIB_PATH = Path(__file__).resolve().parents[2] / "lib"
+BIN_PATH = Path(__file__).resolve().parents[2] / "bin"
 sys.path.insert(0, str(LIB_PATH))
+sys.path.insert(1, str(BIN_PATH))
 
 # Stub the Splunk cli module used by kvstore_operations so the test can import the module outside Splunk.
 splunk = types.ModuleType("splunk")
@@ -26,7 +28,9 @@ sys.modules["splunk.clilib"] = clilib
 sys.modules["splunk.clilib.cli_common"] = cli_common
 
 from illumio.kvstore_mgmt.kvstore_helpers import request
+from illumio.kvstore_mgmt.kvstore_operations import getCollections
 from illumio.kvstore_mgmt.kvstore_operations import uploadCollection
+from illumio_constants import KVSTORE_REPLICATION_COLLECTION_LIST
 
 
 # This integration test is opt-in because it writes to a real Splunk KV-store collection.
@@ -36,7 +40,7 @@ TEST_SPLUNK_SCHEME = os.environ.get("KVSTORE_SPLUNK_SCHEME", "https")
 TEST_SPLUNK_USERNAME = os.environ.get("KVSTORE_SPLUNK_USERNAME")
 TEST_SPLUNK_PASSWORD = os.environ.get("KVSTORE_SPLUNK_PASSWORD")
 TEST_SPLUNK_APP = os.environ.get("KVSTORE_SPLUNK_APP", "TA-Illumio")
-TEST_SPLUNK_PROXY = os.environ.get("KVSTORE_SPLUNK_PROXY")
+TEST_SPLUNK_PROXY = os.environ.get("KV_STORE_REPLICATION_PROXY")
 
 
 class _EventWriterStub:
@@ -87,6 +91,23 @@ def _delete_collection(session_key, collection_name):
     delete_url = (
         f"{_remote_uri()}/servicesNS/nobody/{TEST_SPLUNK_APP}"
         f"/storage/collections/config/{collection_name}?output_mode=json"
+    )
+    request(
+        "DELETE",
+        delete_url,
+        "",
+        {
+            "Authorization": f"Splunk {session_key}",
+            "Content-Type": "application/json",
+        },
+        proxy=TEST_SPLUNK_PROXY,
+    )
+
+
+def _delete_collection_data(session_key, collection_name):
+    delete_url = (
+        f"{_remote_uri()}/servicesNS/nobody/{TEST_SPLUNK_APP}"
+        f"/storage/collections/data/{collection_name}/?output_mode=json"
     )
     request(
         "DELETE",
@@ -159,3 +180,26 @@ def test_upload_collection_writes_documents_to_real_splunk_kvstore():
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
         # Keep the temporary collection on the SH after the test so the uploaded data can be inspected manually.
+
+
+@pytest.mark.skipif(
+    not TEST_SPLUNK_HOST or not TEST_SPLUNK_USERNAME or not TEST_SPLUNK_PASSWORD,
+    reason="Set KVSTORE_SPLUNK_HOST, KVSTORE_SPLUNK_USERNAME and KVSTORE_SPLUNK_PASSWORD to run KV-store upload integration tests.",
+)
+def test_get_collections_only_returns_replication_collection_list_members():
+    session_key = _login()
+    allowlisted_collection = KVSTORE_REPLICATION_COLLECTION_LIST[0]
+    extra_collection = f"ta_proxy_upload_{uuid.uuid4().hex[:8]}"
+
+    try:
+        _create_collection(session_key, extra_collection)
+        _delete_collection_data(session_key, allowlisted_collection)
+
+        collections = getCollections(_remote_uri(), session_key, TEST_SPLUNK_APP)
+        collection_names = {collection_name for app_name, collection_name in collections if app_name == TEST_SPLUNK_APP}
+
+        assert allowlisted_collection in collection_names
+        assert extra_collection not in collection_names
+    finally:
+        _delete_collection_data(session_key, allowlisted_collection)
+        _delete_collection(session_key, extra_collection)

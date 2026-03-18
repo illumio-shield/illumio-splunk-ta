@@ -22,6 +22,7 @@ import re
 from .kvstore_helpers import request
 from pathlib import Path
 from splunk.clilib import cli_common as cli
+from illumio_constants import KVSTORE_REPLICATION_COLLECTION_LIST
 
 # Add lib folders to import path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
@@ -66,10 +67,19 @@ def getCollections(uri, session_key, selected_app, ew=None) -> list:
             entry_app = entry["acl"]["app"]
             entry_collection = entry["name"]
 
-            if selected_app == entry_app:
+            if (
+                selected_app == entry_app
+                and entry_collection in KVSTORE_REPLICATION_COLLECTION_LIST
+            ):
                 c = [entry_app, entry_collection]
                 collections.append(c)
-                ew.log(EventWriter.INFO, f"Added {entry_app}/{entry_collection} to list")
+                if ew is not None:
+                    ew.log(EventWriter.INFO, f"Added {entry_app}/{entry_collection} to list")
+            elif selected_app == entry_app and ew is not None:
+                ew.log(
+                    EventWriter.INFO,
+                    f"Skipping {entry_app}/{entry_collection}; not part of the replication allowlist",
+                )
     except BaseException as e:
         raise Exception(e)
 

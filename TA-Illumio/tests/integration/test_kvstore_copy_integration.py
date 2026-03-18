@@ -11,7 +11,9 @@ import pytest
 
 # Add the TA lib directory so the integration test can import the KV-store modules directly.
 LIB_PATH = Path(__file__).resolve().parents[2] / "lib"
+BIN_PATH = Path(__file__).resolve().parents[2] / "bin"
 sys.path.insert(0, str(LIB_PATH))
+sys.path.insert(1, str(BIN_PATH))
 
 # Stub the Splunk cli module used by kvstore_operations so the test can import the module outside Splunk.
 splunk = types.ModuleType("splunk")
@@ -42,7 +44,7 @@ TEST_TARGET_USERNAME = os.environ.get("KVSTORE_TARGET_USERNAME")
 TEST_TARGET_PASSWORD = os.environ.get("KVSTORE_TARGET_PASSWORD")
 
 TEST_SPLUNK_APP = os.environ.get("KVSTORE_SPLUNK_APP", "TA-Illumio")
-TEST_TARGET_PROXY = os.environ.get("KVSTORE_TARGET_PROXY")
+TEST_TARGET_PROXY = os.environ.get("KV_STORE_REPLICATION_PROXY")
 
 
 class _EventWriterStub:

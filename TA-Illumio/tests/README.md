@@ -23,7 +23,7 @@ This test is opt-in and uses a real proxy and a real reachable HTTPS target.
 Set:
 
 ```bash
-export KVSTORE_HELPERS_TEST_PROXY='http://testuser:testpass@10.2.35.3:3128'
+export KV_STORE_REPLICATION_PROXY='http://testuser:testpass@10.2.35.3:3128'
 export KVSTORE_HELPERS_TEST_URL='https://example.com/'
 ```
 
@@ -35,7 +35,7 @@ pytest TA-Illumio/tests/integration/test_kvstore_helpers_integration.py
 
 Notes:
 
-- If either environment variable is missing, the integration test is skipped.
+- `KV_STORE_REPLICATION_PROXY` is only required for the proxy-path helper test. The direct helper test runs without it.
 - Keep the target URL as a simple HTTPS endpoint that returns HTTP 200.
 - These tests do not require Splunk or KV-store fixtures because they exercise the helper directly.
 
@@ -52,7 +52,7 @@ export KVSTORE_SPLUNK_SCHEME='https'
 export KVSTORE_SPLUNK_USERNAME='<admin-username>'
 export KVSTORE_SPLUNK_PASSWORD='<admin-password>'
 export KVSTORE_SPLUNK_APP='TA-Illumio'
-export KVSTORE_SPLUNK_PROXY='http://testuser:testpass@10.2.35.3:3128'
+export KV_STORE_REPLICATION_PROXY='http://testuser:testpass@10.2.35.3:3128'
 ```
 
 Run:
@@ -63,7 +63,7 @@ pytest TA-Illumio/tests/integration/test_kvstore_upload_integration.py
 
 Notes:
 
-- `KVSTORE_SPLUNK_PROXY` is optional. If it is blank or unset, the test connects directly.
+- `KV_STORE_REPLICATION_PROXY` is optional. If it is blank or unset, the test connects directly.
 - `KVSTORE_SPLUNK_SCHEME` defaults to `https`. Set it to `http` if the Splunk management endpoint is running over HTTP.
 - The test creates a temporary KV-store collection, uploads one sample document, verifies the write, and then deletes the collection.
 
@@ -87,7 +87,7 @@ export KVSTORE_TARGET_USERNAME='<target-username>'
 export KVSTORE_TARGET_PASSWORD='<target-password>'
 
 export KVSTORE_SPLUNK_APP='TA-Illumio'
-export KVSTORE_TARGET_PROXY='http://testuser:testpass@10.2.35.3:3128'
+export KV_STORE_REPLICATION_PROXY='http://testuser:testpass@10.2.35.3:3128'
 ```
 
 Run:
@@ -98,5 +98,5 @@ pytest TA-Illumio/tests/integration/test_kvstore_copy_integration.py
 
 Notes:
 
-- `KVSTORE_TARGET_PROXY` is optional. If it is blank or unset, the target-side calls connect directly.
+- `KV_STORE_REPLICATION_PROXY` is optional. If it is blank or unset, the target-side calls connect directly.
 - The test creates a temporary source collection, inserts one sample document, copies it to the target, verifies the target document, and leaves both collections in place for inspection.
