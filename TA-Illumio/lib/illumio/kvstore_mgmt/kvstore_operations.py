@@ -460,6 +460,18 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
 
         # Upload the restored records to the server
         try:
+            ew.log(
+                EventWriter.DEBUG,
+                (
+                    f"Uploading batch {batch_number} for {app}/{collection} to {record_url} "
+                    f"using proxy {proxy}"
+                )
+                if proxy
+                else (
+                    f"Uploading batch {batch_number} for {app}/{collection} to {record_url} "
+                    "without proxy"
+                ),
+            )
             # Apply the optional proxy from the input stanza only when it was configured.
             _, response_code = request(
                 "POST", record_url, json.dumps(batch), headers, proxy=proxy

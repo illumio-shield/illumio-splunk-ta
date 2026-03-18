@@ -113,6 +113,8 @@ class KVStoreUpload:
                 )
                 continue
 
+            completion = 0
+            expected = len(local_collection_list)
             for local_collection in local_collection_list:
                 # Extract the app and collection name from the array
                 collection_app = local_collection[0]
@@ -132,6 +134,13 @@ class KVStoreUpload:
                     collection_name,
                     self.proxy,
                 )
+                completion += 1
+                self.ew.log(
+                    EventWriter.INFO,
+                    f"Completed KV-store replication of collection '{collection_app}/{collection_name}' for input '{input_name}' to search head '{remote_host}:{remote_port}' ({completion}/{expected} collections replicated).",
+                )
+            
+            
 
 
 __all__ = ["KVStoreUpload"]
