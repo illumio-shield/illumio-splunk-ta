@@ -27,7 +27,7 @@ sys.modules["splunk.clilib"] = clilib
 sys.modules["splunk.clilib.cli_common"] = cli_common
 
 from illumio.kvstore_mgmt.kvstore_helpers import request
-from illumio.kvstore_mgmt.kvstore_operations import copyCollection
+from illumio.kvstore_mgmt.kvstore_operations import copyCollection, deleteCollection
 
 
 # This integration test is opt-in because it writes to real Splunk KV-store collections on source and target.
@@ -173,3 +173,89 @@ def test_copy_collection_replicates_documents_from_source_to_target():
     assert len(target_collection_contents) == 1
     assert target_collection_contents[0]["name"] == "proxy-copy-document"
     assert target_collection_contents[0]["source"] == "copy-integration-test"
+
+
+@pytest.mark.skipif(
+    not TEST_TARGET_HOST
+    or not TEST_TARGET_USERNAME
+    or not TEST_TARGET_PASSWORD
+    or not TEST_TARGET_PROXY,
+    reason="Set target Splunk connection and KV_STORE_REPLICATION_PROXY to run proxy login integration tests.",
+)
+def test_login_through_proxy_returns_valid_session_key():
+    # This test verifies the exact code path that was broken for the customer:
+    # HF -> Proxy -> Splunk Cloud SHC login on port 8089.
+    target_uri = _remote_uri(TEST_TARGET_SCHEME, TEST_TARGET_HOST, TEST_TARGET_PORT)
+
+    # Login through proxy - this is the critical path the customer reported as broken.
+    session_key = _login(
+        target_uri, TEST_TARGET_USERNAME, TEST_TARGET_PASSWORD, proxy=TEST_TARGET_PROXY
+    )
+
+    assert session_key is not None
+    assert len(session_key) > 0
+
+
+@pytest.mark.skipif(
+    not TEST_TARGET_HOST
+    or not TEST_TARGET_USERNAME
+    or not TEST_TARGET_PASSWORD
+    or not TEST_TARGET_PROXY,
+    reason="Set target Splunk connection and KV_STORE_REPLICATION_PROXY to run deleteCollection proxy tests.",
+)
+def test_delete_collection_uses_proxy_for_target():
+    # This test verifies deleteCollection properly routes through proxy.
+    target_uri = _remote_uri(TEST_TARGET_SCHEME, TEST_TARGET_HOST, TEST_TARGET_PORT)
+    target_session_key = _login(
+        target_uri, TEST_TARGET_USERNAME, TEST_TARGET_PASSWORD, proxy=TEST_TARGET_PROXY
+    )
+    collection_name = f"ta_proxy_delete_{uuid.uuid4().hex[:8]}"
+
+    # Create and populate a test collection through proxy.
+    _create_collection(target_uri, target_session_key, collection_name, proxy=TEST_TARGET_PROXY)
+    _insert_documents(
+        target_uri,
+        target_session_key,
+        collection_name,
+        [{"name": "to-be-deleted"}],
+        proxy=TEST_TARGET_PROXY,
+    )
+
+    # Verify data exists before delete.
+    contents_before = _read_collection(
+        target_uri, target_session_key, collection_name, proxy=TEST_TARGET_PROXY
+    )
+    assert len(contents_before) == 1
+
+    # Delete collection contents through proxy.
+    response_code = deleteCollection(
+        _EventWriterStub(),
+        target_uri,
+        target_session_key,
+        TEST_SPLUNK_APP,
+        collection_name,
+        proxy=TEST_TARGET_PROXY,
+    )
+
+    assert response_code == 200
+
+    # Verify collection is empty after delete.
+    contents_after = _read_collection(
+        target_uri, target_session_key, collection_name, proxy=TEST_TARGET_PROXY
+    )
+    assert len(contents_after) == 0
+
+
+@pytest.mark.skipif(
+    not TEST_TARGET_HOST or not TEST_TARGET_USERNAME or not TEST_TARGET_PASSWORD,
+    reason="Set target Splunk connection to run direct login test.",
+)
+def test_login_without_proxy_works_for_direct_connection():
+    # Baseline test: direct login without proxy should work when network allows.
+    # This test runs without proxy to verify the login mechanism itself works.
+    target_uri = _remote_uri(TEST_TARGET_SCHEME, TEST_TARGET_HOST, TEST_TARGET_PORT)
+
+    session_key = _login(target_uri, TEST_TARGET_USERNAME, TEST_TARGET_PASSWORD, proxy=None)
+
+    assert session_key is not None
+    assert len(session_key) > 0

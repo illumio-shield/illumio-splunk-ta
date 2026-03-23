@@ -14,15 +14,15 @@ class DummyEventWriter:
 
 
 def _load_module():
+    kvstore_helpers = types.ModuleType("illumio.kvstore_mgmt.kvstore_helpers")
+    kvstore_helpers.request = Mock()
+
     kvstore_ops = types.ModuleType("illumio.kvstore_mgmt.kvstore_operations")
     kvstore_ops.getCollections = Mock()
     kvstore_ops.copyCollection = Mock()
 
     illumio_pkg = types.ModuleType("illumio")
     kvstore_pkg = types.ModuleType("illumio.kvstore_mgmt")
-
-    splunk_client = types.ModuleType("splunklib.client")
-    splunk_client.connect = Mock()
 
     splunklib_pkg = types.ModuleType("splunklib")
     modularinput_mod = types.ModuleType("splunklib.modularinput")
@@ -37,9 +37,9 @@ def _load_module():
     stubbed_modules = {
         "illumio": illumio_pkg,
         "illumio.kvstore_mgmt": kvstore_pkg,
+        "illumio.kvstore_mgmt.kvstore_helpers": kvstore_helpers,
         "illumio.kvstore_mgmt.kvstore_operations": kvstore_ops,
         "splunklib": splunklib_pkg,
-        "splunklib.client": splunk_client,
         "splunklib.modularinput": modularinput_mod,
         "illumio_constants": constants_mod,
         "illumio_splunk_utils": splunk_utils_mod,
@@ -50,11 +50,11 @@ def _load_module():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-    return module, kvstore_ops, splunk_client, splunk_utils_mod
+    return module, kvstore_ops, kvstore_helpers, splunk_utils_mod
 
 
 def test_upload_collections_skips_host_when_remote_login_fails():
-    module, kvstore_ops, splunk_client, splunk_utils_mod = _load_module()
+    module, kvstore_ops, kvstore_helpers, splunk_utils_mod = _load_module()
     service = types.SimpleNamespace(scheme="https", host="local-hf", port=8089, token="local-token")
     ew = Mock()
 
@@ -62,7 +62,7 @@ def test_upload_collections_skips_host_when_remote_login_fails():
         "search-head-1.example.com": {"username": "admin", "password": "bad-password"}
     }
     kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_workloads"]]
-    splunk_client.connect.side_effect = RuntimeError("401 Unauthorized")
+    kvstore_helpers.request.side_effect = RuntimeError("401 Unauthorized")
 
     uploader = module.KVStoreUpload(service, ew, proxy=None, input_name="illumio://scp3-emea")
     uploader.upload_collections()
@@ -75,16 +75,15 @@ def test_upload_collections_skips_host_when_remote_login_fails():
 
 
 def test_upload_collections_logs_target_hosts_and_replicates_on_success():
-    module, kvstore_ops, splunk_client, splunk_utils_mod = _load_module()
+    module, kvstore_ops, kvstore_helpers, splunk_utils_mod = _load_module()
     service = types.SimpleNamespace(scheme="https", host="local-hf", port=8089, token="local-token")
     ew = Mock()
-    remote_service = types.SimpleNamespace(token="Splunk remote-token", login=Mock())
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
         "search-head-2.example.com": {"username": "admin", "password": "good-password"}
     }
     kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_labels"]]
-    splunk_client.connect.return_value = remote_service
+    kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
 
     uploader = module.KVStoreUpload(service, ew, proxy="http://proxy:3128", input_name="illumio://scp3-emea")
     uploader.upload_collections()
@@ -99,6 +98,13 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
         "illumio_labels",
         "http://proxy:3128",
     )
+    kvstore_helpers.request.assert_called_once_with(
+        "POST",
+        "https://search-head-2.example.com:8089/services/auth/login",
+        {"username": "admin", "password": "good-password"},
+        {"Content-Type": "application/x-www-form-urlencoded"},
+        proxy="http://proxy:3128",
+    )
     info_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.INFO]
     assert any(
         "KV-store replication targets for input 'scp3-emea': search-head-2.example.com" in message
@@ -108,25 +114,25 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
 
 
 def test_upload_collections_uses_port_from_stored_search_head_target():
-    module, kvstore_ops, splunk_client, splunk_utils_mod = _load_module()
+    module, kvstore_ops, kvstore_helpers, splunk_utils_mod = _load_module()
     service = types.SimpleNamespace(scheme="https", host="local-hf", port=8089, token="local-token")
     ew = Mock()
-    remote_service = types.SimpleNamespace(token="Splunk remote-token", login=Mock())
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
         "10.2.2.79": {"username": "admin", "password": "good-password", "port": 8089}
     }
     kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_labels"]]
-    splunk_client.connect.return_value = remote_service
+    kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
 
     uploader = module.KVStoreUpload(service, ew, proxy=None, input_name="illumio://scp3-emea")
     uploader.upload_collections()
 
-    splunk_client.connect.assert_called_once_with(
-        host="10.2.2.79",
-        port=8089,
-        username="admin",
-        password="good-password",
+    kvstore_helpers.request.assert_called_once_with(
+        "POST",
+        "https://10.2.2.79:8089/services/auth/login",
+        {"username": "admin", "password": "good-password"},
+        {"Content-Type": "application/x-www-form-urlencoded"},
+        proxy=None,
     )
     kvstore_ops.copyCollection.assert_called_once_with(
         ew,

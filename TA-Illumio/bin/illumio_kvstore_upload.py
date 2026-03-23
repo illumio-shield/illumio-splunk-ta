@@ -12,17 +12,17 @@ standard_library.install_aliases()
 import sys
 import urllib.error
 import urllib.parse
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Add lib folders to import path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
+from illumio.kvstore_mgmt.kvstore_helpers import request
 from illumio.kvstore_mgmt.kvstore_operations import (
     getCollections,
     copyCollection,
 )
-
-import splunklib.client as client
 
 from illumio_constants import ILLUMIO_TA
 from illumio_splunk_utils import get_credentials_for_search_heads
@@ -50,6 +50,23 @@ class KVStoreUpload:
         self.proxy = proxy
         # Keep the current input name so only this stanza's search head credentials are used.
         self.input_name = input_name
+
+    def _login_remote(self, remote_uri, remote_user, remote_password):
+        login_url = f"{remote_uri}/services/auth/login"
+        response_data, response_status = request(
+            "POST",
+            login_url,
+            {"username": remote_user, "password": remote_password},
+            {"Content-Type": "application/x-www-form-urlencoded"},
+            proxy=self.proxy,
+        )
+        if response_status != 200:
+            raise Exception(f"unexpected response status {response_status} from {login_url}")
+
+        session_key = ET.fromstring(response_data).findtext("./sessionKey")
+        if not session_key:
+            raise Exception(f"missing sessionKey in login response from {login_url}")
+        return session_key
 
     def upload_collections(self):
         credentials = get_credentials_for_search_heads(self.service, self.input_name)
@@ -92,15 +109,11 @@ class KVStoreUpload:
                     f"Attempting KV-store replication login for input '{input_name}' to search head '{remote_host}:{remote_port}' as user '{remote_user}'.",
                 )
 
-                remote_service = client.connect(
-                    host=remote_host,
-                    port=remote_port,
-                    username=remote_user,
-                    password=remote_password,
+                remote_session_key = self._login_remote(
+                    remote_uri,
+                    remote_user,
+                    remote_password,
                 )
-                remote_service.login()
-
-                remote_session_key = remote_service.token.replace("Splunk ", "")
                 self.ew.log(
                     EventWriter.INFO,
                     f"Established KV-store replication session for input '{input_name}' to search head '{remote_host}:{remote_port}'.",

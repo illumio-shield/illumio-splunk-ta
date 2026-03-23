@@ -67,3 +67,44 @@ def test_request_with_malformed_proxy_raises_error():
             {"Content-Type": "application/json"},
             proxy="http://10.2.35.3:notaport",
         )
+
+
+@pytest.mark.skipif(
+    not TEST_PROXY or not TEST_URL,
+    reason="Set KV_STORE_REPLICATION_PROXY and KVSTORE_HELPERS_TEST_URL to run proxy auth tests.",
+)
+def test_request_with_wrong_proxy_credentials_fails():
+    # Replace credentials in proxy URL with invalid ones.
+    # This tests that proxy authentication is actually being enforced.
+    import re
+    bad_proxy = re.sub(r"://[^@]+@", "://wronguser:wrongpass@", TEST_PROXY)
+    # Only run if proxy has credentials to replace.
+    if bad_proxy == TEST_PROXY:
+        pytest.skip("TEST_PROXY does not contain credentials to test auth failure.")
+
+    # Proxy should reject the request with bad credentials.
+    # The exact error depends on proxy configuration (407, connection reset, etc).
+    with pytest.raises(Exception):
+        request(
+            "GET",
+            TEST_URL,
+            "",
+            {"Content-Type": "application/json"},
+            proxy=bad_proxy,
+        )
+
+
+@pytest.mark.skipif(
+    not TEST_URL,
+    reason="Set KVSTORE_HELPERS_TEST_URL to run unreachable proxy tests.",
+)
+def test_request_with_unreachable_proxy_raises_error():
+    # Using a non-routable IP to simulate unreachable proxy.
+    with pytest.raises(Exception, match="URL Request Error"):
+        request(
+            "GET",
+            TEST_URL,
+            "",
+            {"Content-Type": "application/json"},
+            proxy="http://192.0.2.1:3128",  # TEST-NET-1, non-routable
+        )

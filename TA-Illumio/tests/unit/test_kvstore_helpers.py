@@ -133,3 +133,96 @@ def test_request_with_http_target_and_proxy_uses_absolute_url_without_tunnel(moc
             "Proxy-Authorization": f"Basic {expected_auth}",
         },
     )
+
+
+@patch.object(kvstore_helpers.httplib, "HTTPSConnection")
+def test_request_with_proxy_uses_default_port_443_when_not_specified(mock_https_connection):
+    # When target URL has no explicit port, tunnel should use default HTTPS port 443.
+    connection = Mock()
+    connection.getresponse.return_value = _build_response()
+    mock_https_connection.return_value = connection
+
+    request(
+        "GET",
+        "https://splunk-cloud.example.com/services/auth/login",
+        "",
+        {"Content-Type": "application/json"},
+        proxy="http://10.2.35.3:3128",
+    )
+
+    connection.set_tunnel.assert_called_once_with(
+        "splunk-cloud.example.com", 443, headers={"Host": "splunk-cloud.example.com"}
+    )
+
+
+@patch.object(kvstore_helpers.httplib, "HTTPSConnection")
+def test_request_with_https_proxy_scheme_creates_https_connection_to_proxy(mock_https_connection):
+    # When proxy URL uses https://, the connection to the proxy itself should use HTTPS.
+    connection = Mock()
+    connection.getresponse.return_value = _build_response()
+    mock_https_connection.return_value = connection
+
+    request(
+        "POST",
+        "https://example.com:8089/services/test",
+        "{}",
+        {"Content-Type": "application/json"},
+        proxy="https://secure-proxy.example.com:8443",
+    )
+
+    # HTTPSConnection should be called for the proxy endpoint.
+    mock_https_connection.assert_called()
+    # Verify tunnel is set to target host.
+    connection.set_tunnel.assert_called_once_with(
+        "example.com", 8089, headers={"Host": "example.com:8089"}
+    )
+
+
+@patch.object(kvstore_helpers.httplib, "HTTPSConnection")
+def test_request_with_proxy_handles_url_encoded_credentials(mock_https_connection):
+    # Proxy credentials with special characters should be URL-decoded before use.
+    connection = Mock()
+    connection.getresponse.return_value = _build_response()
+    mock_https_connection.return_value = connection
+
+    request(
+        "POST",
+        "https://example.com:8089/services/test",
+        "{}",
+        {"Content-Type": "application/json"},
+        proxy="http://test%40user:pass%23word@10.2.35.3:3128",
+    )
+
+    # Credentials should be decoded: test@user:pass#word
+    expected_auth = base64.b64encode(b"test@user:pass#word").decode("ascii")
+    connection.set_tunnel.assert_called_once_with(
+        "example.com",
+        8089,
+        headers={
+            "Host": "example.com:8089",
+            "Proxy-Authorization": f"Basic {expected_auth}",
+        },
+    )
+
+
+@patch.object(kvstore_helpers.httplib, "HTTPSConnection")
+def test_request_with_proxy_preserves_query_string_in_request_target(mock_https_connection):
+    # Query parameters should be preserved when tunneling through proxy.
+    connection = Mock()
+    connection.getresponse.return_value = _build_response()
+    mock_https_connection.return_value = connection
+
+    request(
+        "GET",
+        "https://example.com:8089/servicesNS/nobody/TA-Illumio/storage/collections/data/test?output_mode=json&count=0",
+        "",
+        {"Content-Type": "application/json"},
+        proxy="http://10.2.35.3:3128",
+    )
+
+    connection.request.assert_called_once_with(
+        "GET",
+        "/servicesNS/nobody/TA-Illumio/storage/collections/data/test?output_mode=json&count=0",
+        b"",
+        {"Content-Type": "application/json"},
+    )
