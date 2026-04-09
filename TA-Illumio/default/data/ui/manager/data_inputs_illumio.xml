@@ -32,8 +32,7 @@ If no port is specified, :443 is assumed. Example value: https://my.pce.com:8443
       <view name="edit"/>
       <view name="create"/>
       <key name="legend">Search head configuration</key>
-      <key name="helpText">Enter fqdn and username in the format username@fqdn and password of splunk search head instance. This setting is only applicable to Splunk Enterprise deployment.</key>
-
+      <key name="helpText">Enter fqdn and username in the format username@fqdn and password of splunk search head instance. Saved credentials are read-only here. Delete and add the credential again to change username, FQDN, password, or auth token mode.</key>
       <elements>
         <element name="search_head_cred_storage" type="search_head_storage" label="Search Head Credentials">
           <view name="edit"/>

@@ -28,7 +28,7 @@ sys.modules["splunk.clilib"] = clilib
 sys.modules["splunk.clilib.cli_common"] = cli_common
 
 from illumio.kvstore_mgmt.kvstore_helpers import request
-from illumio.kvstore_mgmt.kvstore_operations import getCollections
+from illumio.kvstore_mgmt.kvstore_operations import getCollectionNamesToReplicate
 from illumio.kvstore_mgmt.kvstore_operations import uploadCollection
 from illumio_constants import KVSTORE_REPLICATION_COLLECTION_LIST
 
@@ -195,7 +195,7 @@ def test_get_collections_only_returns_replication_collection_list_members():
         _create_collection(session_key, extra_collection)
         _delete_collection_data(session_key, allowlisted_collection)
 
-        collections = getCollections(_remote_uri(), session_key, TEST_SPLUNK_APP)
+        collections = getCollectionNamesToReplicate(_remote_uri(), session_key, TEST_SPLUNK_APP)
         collection_names = {collection_name for app_name, collection_name in collections if app_name == TEST_SPLUNK_APP}
 
         assert allowlisted_collection in collection_names

@@ -18,7 +18,7 @@ def _load_module():
     kvstore_helpers.request = Mock()
 
     kvstore_ops = types.ModuleType("illumio.kvstore_mgmt.kvstore_operations")
-    kvstore_ops.getCollections = Mock()
+    kvstore_ops.getCollectionNamesToReplicate = Mock()
     kvstore_ops.copyCollection = Mock()
 
     illumio_pkg = types.ModuleType("illumio")
@@ -61,7 +61,7 @@ def test_upload_collections_skips_host_when_remote_login_fails():
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
         "search-head-1.example.com": {"username": "admin", "password": "bad-password"}
     }
-    kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_workloads"]]
+    kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_workloads"]]
     kvstore_helpers.request.side_effect = RuntimeError("401 Unauthorized")
 
     uploader = module.KVStoreUpload(service, ew, proxy=None, input_name="illumio://scp3-emea")
@@ -80,9 +80,9 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "search-head-2.example.com": {"username": "admin", "password": "good-password"}
+        "search-head-2.example.com": {"username": "admin", "password": "good-password", "is_token": False}
     }
-    kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_labels"]]
+    kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
     kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
 
     uploader = module.KVStoreUpload(service, ew, proxy="http://proxy:3128", input_name="illumio://scp3-emea")
@@ -97,8 +97,10 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
         "TA-Illumio",
         "illumio_labels",
         "http://proxy:3128",
+        False,  # is_bearer_token
     )
-    kvstore_helpers.request.assert_called_once_with(
+    # Check that login was called (now there are additional calls for session info and auth probe)
+    kvstore_helpers.request.assert_any_call(
         "POST",
         "https://search-head-2.example.com:8089/services/auth/login",
         {"username": "admin", "password": "good-password"},
@@ -119,15 +121,16 @@ def test_upload_collections_uses_port_from_stored_search_head_target():
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "10.2.2.79": {"username": "admin", "password": "good-password", "port": 8089}
+        "10.2.2.79": {"username": "admin", "password": "good-password", "port": 8089, "is_token": False}
     }
-    kvstore_ops.getCollections.return_value = [["TA-Illumio", "illumio_labels"]]
+    kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
     kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
 
     uploader = module.KVStoreUpload(service, ew, proxy=None, input_name="illumio://scp3-emea")
     uploader.upload_collections()
 
-    kvstore_helpers.request.assert_called_once_with(
+    # Check that login was called (now there are additional calls for session info and auth probe)
+    kvstore_helpers.request.assert_any_call(
         "POST",
         "https://10.2.2.79:8089/services/auth/login",
         {"username": "admin", "password": "good-password"},
@@ -143,4 +146,55 @@ def test_upload_collections_uses_port_from_stored_search_head_target():
         "TA-Illumio",
         "illumio_labels",
         None,
+        False,  # is_bearer_token
     )
+
+
+def test_upload_collections_continues_to_next_host_when_auth_probe_request_fails():
+    module, kvstore_ops, kvstore_helpers, splunk_utils_mod = _load_module()
+    service = types.SimpleNamespace(scheme="https", host="local-hf", port=8089, token="local-token")
+    ew = Mock()
+
+    splunk_utils_mod.get_credentials_for_search_heads.return_value = {
+        "bad.example.com": {"username": "admin1", "password": "token-1", "is_token": False},
+        "good.example.com": {"username": "admin2", "password": "token-2", "is_token": False},
+    }
+    kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
+
+    def request_side_effect(method, url, data, headers, proxy=None):
+        if method == "POST" and url == "https://bad.example.com:8089/services/auth/login":
+            return (b"<response><sessionKey>bad-session</sessionKey></response>", 200)
+        if method == "POST" and url == "https://good.example.com:8089/services/auth/login":
+            return (b"<response><sessionKey>good-session</sessionKey></response>", 200)
+        if method == "GET" and "bad.example.com:8089/services/authentication/current-context" in url:
+            raise RuntimeError("Tunnel connection failed: 503 Service Unavailable")
+        if method == "GET" and "good.example.com:8089/services/authentication/current-context" in url:
+            return ('{"entry":[{"content":{"username":"admin2","realname":"Admin Two","roles":["admin"],"capabilities":["admin_all_objects"]}}]}', 200)
+        if method == "GET" and "good.example.com:8089/services/authentication/httpauth-tokens" in url:
+            return ('{"entry":[]}', 200)
+        if method == "GET" and "bad.example.com:8089/servicesNS/nobody/TA-Illumio/storage/collections/config" in url:
+            raise RuntimeError("Tunnel connection failed: 503 Service Unavailable")
+        if method == "GET" and "good.example.com:8089/servicesNS/nobody/TA-Illumio/storage/collections/config" in url:
+            return ('{"entry":[]}', 200)
+        raise AssertionError(f"Unexpected request: {method} {url}")
+
+    kvstore_helpers.request.side_effect = request_side_effect
+
+    uploader = module.KVStoreUpload(service, ew, proxy="http://proxy:3128", input_name="illumio://scp3-emea")
+    uploader.upload_collections()
+
+    kvstore_ops.copyCollection.assert_called_once_with(
+        ew,
+        "local-token",
+        "https://local-hf:8089",
+        "good-session",
+        "https://good.example.com:8089",
+        "TA-Illumio",
+        "illumio_labels",
+        "http://proxy:3128",
+        False,
+    )
+    error_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.ERROR]
+    info_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.INFO]
+    assert any("Auth probe failed" in message and "bad.example.com:8089" in message for message in error_messages)
+    assert any("Replicating KV-store collection 'TA-Illumio/illumio_labels'" in message and "good.example.com:8089" in message for message in info_messages)

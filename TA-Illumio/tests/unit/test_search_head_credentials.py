@@ -16,7 +16,7 @@ def _load_module():
     splunklib_pkg = types.ModuleType("splunklib")
     constants_mod = types.ModuleType("illumio_constants")
     constants_mod.SEARCH_HEAD_CREDENTIALS_PREFIX = "kvstore"
-    constants_mod.KVSTORE_BATCH_DEFAULT = 1000
+    constants_mod.KVSTORE_BATCH_DEFAULT = 100
     pce_utils_mod = types.ModuleType("illumio_pce_utils")
     pce_utils_mod.IllumioInputParameters = object
 
@@ -52,23 +52,32 @@ def _build_service(entries):
     [
         (
             "admin@10.2.2.79",
-            {"10.2.2.79": {"username": "admin", "password": "secret", "port": None}},
+            {"10.2.2.79": {"username": "admin", "password": "secret", "port": None, "is_token": False}},
         ),
         (
             "admin@10.2.2.79:8089",
-            {"10.2.2.79": {"username": "admin", "password": "secret", "port": 8089}},
+            {"10.2.2.79": {"username": "admin", "password": "secret", "port": 8089, "is_token": False}},
         ),
         (
             "admin@search-head.example.com",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": None}},
+            {"search-head.example.com": {"username": "admin", "password": "secret", "port": None, "is_token": False}},
         ),
         (
             "admin@search-head.example.com:8443",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8443}},
+            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8443, "is_token": False}},
         ),
         (
             " admin @search-head.example.com:8089/ ",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8089}},
+            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8089, "is_token": False}},
+        ),
+        # Token-based auth (token: prefix)
+        (
+            "token:admin@10.2.2.79",
+            {"10.2.2.79": {"username": "admin", "password": "secret", "port": None, "is_token": True}},
+        ),
+        (
+            "token:admin@search-head.example.com:8089",
+            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8089, "is_token": True}},
         ),
     ],
 )

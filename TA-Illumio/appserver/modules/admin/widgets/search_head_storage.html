@@ -3,26 +3,90 @@
 This widget stores the search head credentials in the storage/passwords endpoint.
 -->
 
+<style>
+#cred_inputs > div.cred_input_group {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    margin-bottom: 20px !important;
+}
+#cred_inputs > div.cred_input_group.is-deleted {
+    display: none !important;
+}
+#cred_inputs > div.cred_input_group > input[type="text"],
+#cred_inputs > div.cred_input_group > input[type="password"] {
+    width: 100% !important;
+}
+#cred_inputs > div.cred_input_group > input[disabled] {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+#cred_inputs > div.cred_input_group > .checkbox-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    margin-top: 5px !important;
+}
+#cred_inputs > div.cred_input_group > .checkbox-row > .checkbox-group {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+}
+#cred_inputs > div.cred_input_group > .checkbox-row > button,
+#search_head_credentials_section > button {
+    padding: 8px 16px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background-color: #333;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 14px;
+}
+#cred_inputs > div.cred_input_group > .checkbox-row > button:hover,
+#search_head_credentials_section > button:hover {
+    background-color: #444;
+    border-color: #666;
+}
+#search_head_credentials_section > button {
+    margin-top: 10px;
+    margin-left: 25px;
+}
+</style>
+
 <div id="search_head_credentials_section" class="widget">
-    <label>Search Head Credentials</label>
+    <label>&nbsp;</label>
     <div id="cred_inputs">
-        <div class="cred_input_group">
-        </div>
     </div>
-    <button type="button" onclick="addCredentialsInput()">Add Search Head credentials</button>
+    <button type="button" onclick="addCredentialsInput()">Add a new search head credential</button>
 </div>
 
-<script>
-function addCredentialsInput() {
+<script type="text/javascript">
+var secretMask = "*".repeat(64);
+
+// Add a new credential input group to the form
+// originalUsername: the username as stored (with token: prefix if applicable), used for deletion
+function addCredentialsInput(isToken, originalUsername) {
     var newInputGroup = document.createElement('div');
     newInputGroup.className = 'cred_input_group';
+    var isExistingCredential = !!originalUsername;
+    // Store the original username for proper deletion later
+    if (originalUsername) {
+        newInputGroup.setAttribute('data-original-username', originalUsername);
+    }
 
     var usernameInput = document.createElement('input');
     usernameInput.type = 'text';
     usernameInput.name = 'username_fqdn[]';
     usernameInput.placeholder = 'username@fqdn';
     usernameInput.setAttribute('aria-required', 'false');
-    usernameInput.setAttribute('autocomplete', 'off');    
+    usernameInput.setAttribute('autocomplete', 'off');
+    if (isExistingCredential) {
+        usernameInput.disabled = true;
+        usernameInput.title = 'Delete and add the credential again to change username or FQDN.';
+    }
 
     var passwordInput = document.createElement('input');
     passwordInput.type = 'password';
@@ -30,166 +94,255 @@ function addCredentialsInput() {
     passwordInput.placeholder = 'password';
     passwordInput.setAttribute('aria-required', 'false');
     passwordInput.setAttribute('autocomplete', 'off');
+    if (isExistingCredential) {
+        passwordInput.disabled = true;
+        passwordInput.title = 'Delete and add the credential again to change the password.';
+    }
+
+    // Create a row for checkbox and delete button
+    var checkboxRow = document.createElement('div');
+    checkboxRow.className = 'checkbox-row';
+
+    var checkboxGroup = document.createElement('div');
+    checkboxGroup.className = 'checkbox-group';
+
+    var tokenCheckbox = document.createElement('input');
+    tokenCheckbox.type = 'checkbox';
+    tokenCheckbox.name = 'is_token[]';
+    tokenCheckbox.id = 'is_token_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    tokenCheckbox.checked = isToken || false;
+    if (isExistingCredential) {
+        tokenCheckbox.disabled = true;
+    }
+
+    var tokenLabel = document.createElement('label');
+    tokenLabel.htmlFor = tokenCheckbox.id;
+    tokenLabel.innerText = ' Password is an auth token';
 
     var deleteButton = document.createElement('button');
     deleteButton.type = 'button';
+    deleteButton.className = 'delete-cred-btn';
     deleteButton.innerText = 'Delete';
-    deleteButton.onclick = function() { removeCredentialsInput(deleteButton); };
+    deleteButton.onclick = function() {
+        newInputGroup.setAttribute('data-deleted', 'true');
+        newInputGroup.classList.add('is-deleted');
+    };
 
+    checkboxGroup.appendChild(tokenCheckbox);
+    checkboxGroup.appendChild(tokenLabel);
+    checkboxRow.appendChild(checkboxGroup);
+    checkboxRow.appendChild(deleteButton);
 
     newInputGroup.appendChild(usernameInput);
     newInputGroup.appendChild(passwordInput);
-    newInputGroup.appendChild(deleteButton);
-    
+    if (isExistingCredential) {
+        newInputGroup.appendChild(credentialNote);
+    }
+    newInputGroup.appendChild(checkboxRow);
+
     document.getElementById('cred_inputs').appendChild(newInputGroup);
 }
+// Expose to global scope for inline onclick handlers
+window.addCredentialsInput = addCredentialsInput;
 
 function removeCredentialsInput(button) {
-    var inputGroup = button.parentNode;    
+    var inputGroup = button.closest('.cred_input_group');
     inputGroup.setAttribute('data-deleted', 'true');
-    inputGroup.style.display = 'none';    
+    inputGroup.classList.add('is-deleted');
 }
-</script>
+// Expose to global scope for inline onclick handlers
+window.removeCredentialsInput = removeCredentialsInput;
 
+var getAppNamespace = function() {
+    return $('#__ns_id').val() || 'TA-Illumio';
+};
 
-<script type="text/javascript">
-var secretMask = "*".repeat(64);
+var getFormKey = function() {
+    return $("form#eaiform.entityEditForm input[name='splunk_form_key']").val();
+};
 
 var storeCredential = function(realm, username, password) {
     return $.ajax({
-        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords?output_mode=json",
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + getAppNamespace() + "/storage/passwords?output_mode=json",
         data: {
             name: username,
             password: password,
             realm: realm
         },
         headers: {
-            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+            'X-Splunk-Form-Key': getFormKey()
         },
         type: "POST"
     });
-}
+};
 
 var updateCredential = function(name, password) {
     return $.ajax({
-        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + getAppNamespace() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
         data: {
             password: password
         },
         headers: {
-            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+            'X-Splunk-Form-Key': getFormKey()
         },
         type: "POST"
     });
-}
+};
 
 var deleteCredential = function(name) {
     return $.ajax({
-        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
-
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + getAppNamespace() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
         headers: {
-            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+            'X-Splunk-Form-Key': getFormKey()
         },
         type: "DELETE"
     });
-}
-
-var getCredential = function(name) {
-    return $.ajax({
-        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords/" + encodeURIComponent(name) + "?output_mode=json",
-        headers: {
-            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
-        },
-        type: "GET"
-    });
-}
+};
 
 var getAllCredentials = function(realm) {
     return $.ajax({
-        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + $('#__ns_id').val() + "/storage/passwords?output_mode=json&search=" + encodeURIComponent(realm),
+        url: "/en-US/splunkd/__raw/servicesNS/nobody/" + getAppNamespace() + "/storage/passwords?output_mode=json&search=" + encodeURIComponent(realm),
         headers: {
-            'X-Splunk-Form-Key': $("form#eaiform.entityEditForm input[name='splunk_form_key']").val()
+            'X-Splunk-Form-Key': getFormKey()
         },
         type: "GET"
     });
-}
-
-var createOrUpdateCredential = function(realm, username, password) {
-    storeCredential(realm, username, password)
-    .done(function() {
-        console.log("Successfully stored the credentials");
-    })
-    .fail(function(response) {
-        if(response.status === 409){
-            console.log("Credential exists, updating...");
-
-            var stanzaName = getCredentialName(realm, username);            
-
-            updateCredential(stanzaName, password)
-            .done(function(){
-                console.log("Successfully updated the credentials");
-            })
-            .fail(function(){
-                console.log("Failed to update the credentials");
-            });
-        } else {
-            console.log("Failed to store the credentials, error code: ", response.status);
-        }
-    });
 };
 
-var getCredentialName = function(realm, username){
-    //return realm.replace(":", "\\:") + ":" + $('#api_key_id_id').val().replace(":", "\\:") + ":";
-    return realm.replace(":", "\\:") + ":" + username.replace(":", "\\:") + ":";
-}
+var getCredentialName = function(realm, username) {
+    return realm.replace(/:/g, "\\:") + ":" + username.replace(/:/g, "\\:") + ":";
+};
+
+var getRealm = function(prefix) {
+    if ($('#name_id').length > 0) {
+        return prefix + $('#name_id').val();
+    } else if ($('.ManagerPageTitle').length > 0) {
+        return prefix + $('.ManagerPageTitle').text();
+    }
+};
+
+// Create or update a credential, returning a promise
+var createOrUpdateCredentialAsync = function(realm, username, password) {
+    return storeCredential(realm, username, password)
+        .then(function() {
+            console.log("Successfully stored credential for: " + username);
+        })
+        .catch(function(response) {
+            if (response.status === 409) {
+                console.log("Credential exists, updating: " + username);
+                var stanzaName = getCredentialName(realm, username);
+                return updateCredential(stanzaName, password)
+                    .then(function() {
+                        console.log("Successfully updated credential for: " + username);
+                    });
+            } else {
+                console.error("Failed to store credential, status: " + response.status);
+                throw response;
+            }
+        });
+};
 
 $(document).ready(function() {
-    // if editing an existing entry, fetch and mask the stored credentials
-    if($('.ManagerPageTitle').length > 0) {
+    // If editing an existing entry, fetch and display stored credentials
+    if ($('.ManagerPageTitle').length > 0) {
         var realm = getRealm("${element['prefix']}");
 
-        // Fetch all stored credentials
         getAllCredentials(realm).done(function(result) {
-            if (result.entry.length > 0) {
-                // Create input groups for each stored credential
+            if (result.entry && result.entry.length > 0) {
                 result.entry.forEach(function(entry) {
-                    count = 0
-                    var username = entry.name.split(":")[2]; // Extract username from the entry name
-                    var password = secretMask; // Mask the password                    
-                                    
-                    addCredentialsInput(); // Add a new input group
-                    
-                    // Get the last added input group and populate the fields
-                    var lastGroup = $('#cred_inputs .cred_input_group').last();
-                    $(lastGroup).find('input[name="username_fqdn[]"]').val(username);
-                    $(lastGroup).find('input[name="password[]"]').val(password);
-                    count += 1
+                    // Get the raw stored username from entry.content.username
+                    var storedUsername = entry.content.username;
+                    var displayUsername = storedUsername;
 
-                    
+                    // Check if this credential uses token auth (has 'token:' prefix)
+                    var isToken = storedUsername.startsWith('token:');
+                    if (isToken) {
+                        displayUsername = storedUsername.substring(6); // Remove 'token:' prefix for display
+                    }
+
+                    // Add input group, passing the original stored username for deletion
+                    addCredentialsInput(isToken, storedUsername);
+
+                    // Populate the fields
+                    var lastGroup = $('#cred_inputs .cred_input_group').last();
+                    $(lastGroup).find('input[name="username_fqdn[]"]').val(displayUsername);
+                    $(lastGroup).find('input[name="password[]"]').val(secretMask);
                 });
             }
+        }).fail(function(err) {
+            console.error("Failed to fetch credentials:", err);
         });
     }
-    // store credentials when the form is submitted
 
-    // uncomment this later
-
+    // Handle form submission - process all credential operations
     $('form#eaiform.entityEditForm').on('submit', function(e) {
-        console.log("Storing credentials...");
-
         var realm = getRealm("${element['prefix']}");
+        var promises = [];
 
         $('#cred_inputs .cred_input_group').each(function(index, group) {
-            var username = $(group).find('input[name="username_fqdn[]"]').val();
-            var password = $(group).find('input[name="password[]"]').val();
-            if ($(group).attr('data-deleted') === 'true') {
-                deleteCredential(getCredentialName(realm, username));
-            } 
-            else if (password !== secretMask) {
-                createOrUpdateCredential(realm, username, password);
+            var $group = $(group);
+            var displayUsername = $group.find('input[name="username_fqdn[]"]').val();
+            var password = $group.find('input[name="password[]"]').val();
+            var isToken = $group.find('input[name="is_token[]"]').is(':checked');
+            var originalUsername = $group.attr('data-original-username');
+            var isDeleted = $group.attr('data-deleted') === 'true';
+            var isNewEntry = !originalUsername;
+
+            // Build the username to store (with token: prefix if needed)
+            var newStoredUsername = isToken ? 'token:' + displayUsername : displayUsername;
+
+            if (isDeleted && originalUsername) {
+                // Delete the original credential
+                console.log("Deleting credential: " + originalUsername);
+                var deletePromise = deleteCredential(getCredentialName(realm, originalUsername))
+                    .then(function() {
+                        console.log("Successfully deleted: " + originalUsername);
+                    })
+                    .catch(function(err) {
+                        // 404 is ok - credential might already be deleted
+                        if (err.status !== 404) {
+                            console.error("Failed to delete: " + originalUsername, err);
+                        }
+                    });
+                promises.push(deletePromise);
+            }
+            else if (!isDeleted && displayUsername) {
+                if (password !== secretMask) {
+                    // Password changed - need to create/update
+                    if (originalUsername && originalUsername !== newStoredUsername) {
+                        // Username or token flag changed - delete old, create new
+                        console.log("Username changed from " + originalUsername + " to " + newStoredUsername);
+                        var changePromise = deleteCredential(getCredentialName(realm, originalUsername))
+                            .catch(function() { /* ignore delete errors */ })
+                            .then(function() {
+                                return createOrUpdateCredentialAsync(realm, newStoredUsername, password);
+                            });
+                        promises.push(changePromise);
+                    } else {
+                        // Same username or new entry - just create/update
+                        promises.push(createOrUpdateCredentialAsync(realm, newStoredUsername, password));
+                    }
+                }
+                else if (originalUsername && originalUsername !== newStoredUsername) {
+                    // Password not changed but token flag changed - need to migrate
+                    // First get the existing password, then recreate with new username
+                    console.log("Token flag changed, migrating from " + originalUsername + " to " + newStoredUsername);
+                    // We can't get the password back, so user needs to re-enter it
+                    console.warn("Cannot migrate credential without re-entering password. Please re-enter the password for: " + displayUsername);
+                }
             }
         });
+
+        // Wait for all operations to complete (but don't block form submission)
+        if (promises.length > 0) {
+            Promise.all(promises)
+                .then(function() {
+                    console.log("All credential operations completed successfully");
+                })
+                .catch(function(err) {
+                    console.error("Some credential operations failed:", err);
+                });
+        }
     });
 });
-
 </script>

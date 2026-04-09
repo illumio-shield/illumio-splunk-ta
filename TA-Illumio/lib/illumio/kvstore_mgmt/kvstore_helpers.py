@@ -16,11 +16,28 @@ standard_library.install_aliases()
 import sys
 import os
 import base64
+import logging
 import urllib.request
 import urllib.parse
 import urllib.error
 import http.client as httplib
 import ssl
+
+logger = logging.getLogger(__name__)
+
+
+def _mask_proxy_url(proxy):
+    """Return proxy URL with credentials masked for safe logging."""
+    if not proxy:
+        return None
+    parsed = urllib.parse.urlparse(proxy)
+    if parsed.username or parsed.password:
+        # Rebuild URL with masked credentials
+        masked_netloc = "***:***@%s" % parsed.hostname
+        if parsed.port:
+            masked_netloc = "%s:%s" % (masked_netloc, parsed.port)
+        return "%s://%s" % (parsed.scheme, masked_netloc)
+    return proxy
 
 # Add lib folders to import path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
@@ -48,6 +65,11 @@ def request(method, url, data, headers, conn=None, verify=None, proxy=None):
                 proxy_netloc = proxy_tuple.hostname
                 if proxy_tuple.port:
                     proxy_netloc = "%s:%s" % (proxy_tuple.hostname, proxy_tuple.port)
+                logger.info(
+                    "[KV Replication] Proxy configured: connecting to proxy %s for target %s",
+                    _mask_proxy_url(proxy),
+                    url_tuple.netloc,
+                )
                 # Add Host for the tunnel target so the proxy CONNECT request includes the target authority.
                 proxy_headers = {"Host": url_tuple.netloc}
                 # If proxy credentials are present in the proxy URL, send them as Proxy-Authorization.
@@ -89,10 +111,16 @@ def request(method, url, data, headers, conn=None, verify=None, proxy=None):
                     if tunnel_port is None:
                         tunnel_port = 443
 
+                    logger.info(
+                        "[KV Replication] Setting up HTTPS tunnel through proxy to %s:%s",
+                        url_tuple.hostname,
+                        tunnel_port,
+                    )
                     conn.set_tunnel(url_tuple.hostname, tunnel_port, headers=proxy_headers)
             elif url_tuple.scheme == "https":
                 # If verify was set explicitly, OR it's not set to False and env[PYTHONHTTPSVERIFY] is set
                 env_verify_set = os.environ.get("PYTHONHTTPSVERIFY", default=False)
+                logger.info("[KV Replication] Direct HTTPS connection (no proxy) to %s", url_tuple.netloc)
                 if verify or (string_to_bool(env_verify_set) and not verify == False):
                     conn = httplib.HTTPSConnection(
                         url_tuple.netloc, context=ssl.create_default_context()
@@ -102,6 +130,7 @@ def request(method, url, data, headers, conn=None, verify=None, proxy=None):
                         url_tuple.netloc, context=ssl._create_unverified_context()
                     )
             elif url_tuple.scheme == "http":
+                logger.info("[KV Replication] Direct HTTP connection (no proxy) to %s", url_tuple.netloc)
                 conn = httplib.HTTPConnection(
                     url_tuple.netloc, context=ssl._create_unverified_context()
                 )
@@ -126,14 +155,22 @@ def request(method, url, data, headers, conn=None, verify=None, proxy=None):
             request_target = url_tuple.path or "/"
             if url_tuple.query:
                 request_target = "%s?%s" % (request_target, url_tuple.query)
+        logger.info("[KV Replication] Sending %s request to %s", method, request_target)
         conn.request(method, request_target, data, request_headers)
         response = conn.getresponse()
         response_data = response.read()
         response_status = response.status
+        logger.info(
+            "[KV Replication] Response received: status=%s, content_length=%s, via_proxy=%s",
+            response_status,
+            len(response_data),
+            "yes" if proxy else "no",
+        )
         if close_conn:
             conn.close()
         return response_data, response_status
     except BaseException as e:
+        logger.error("[KV Replication] Request failed: %s %s - %s", method, url, str(e))
         raise Exception("URL Request Error: " + str(e))
 
 

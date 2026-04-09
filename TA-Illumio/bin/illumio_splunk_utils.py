@@ -60,6 +60,10 @@ def get_credentials_for_search_heads(service: client.Service, input_name: str) -
             # The reason SEARCH_HEAD_CREDENTIALS_PREFIX is used here, is kvstore is the prefix for storing search head credentials
             if entry["content"].get("realm") == credential_realm:
                 user_fqdn = entry["content"]["username"]
+                # Check for 'token:' prefix indicating auth token instead of password
+                is_token = user_fqdn.startswith("token:")
+                if is_token:
+                    user_fqdn = user_fqdn[6:]  # Remove 'token:' prefix
                 # Skip malformed search head credentials instead of failing the entire modular input run.
                 if "@" not in user_fqdn:
                     continue
@@ -82,6 +86,7 @@ def get_credentials_for_search_heads(service: client.Service, input_name: str) -
                     "username": user,
                     "password": entry["content"]["clear_password"],
                     "port": port if port else None,
+                    "is_token": is_token,
                 }
         return credentials
     except Exception as e:
