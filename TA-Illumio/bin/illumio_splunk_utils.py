@@ -82,7 +82,10 @@ def get_credentials_for_search_heads(service: client.Service, input_name: str) -
                     port = int(port_text)
                     if port < 1 or port > 65535:
                         continue
-                credentials[fqdn] = {
+                effective_port = port or 8089
+                target = f"{fqdn}:{effective_port}"
+                credentials[target] = {
+                    "host": fqdn,
                     "username": user,
                     "password": entry["content"]["clear_password"],
                     "port": port if port else None,

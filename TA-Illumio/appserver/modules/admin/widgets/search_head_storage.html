@@ -54,10 +54,20 @@ This widget stores the search head credentials in the storage/passwords endpoint
     margin-top: 10px;
     margin-left: 25px;
 }
+#search_head_credentials_banner {
+    display: none;
+    margin: 0 0 20px 0;
+    padding: 14px 20px;
+    background-color: #a62f22;
+    color: #fff;
+    font-weight: 600;
+    line-height: 1.5;
+}
 </style>
 
 <div id="search_head_credentials_section" class="widget">
     <label>&nbsp;</label>
+    <div id="search_head_credentials_banner"></div>
     <div id="cred_inputs">
     </div>
     <button type="button" onclick="addCredentialsInput()">Add a new search head credential</button>
@@ -135,9 +145,6 @@ function addCredentialsInput(isToken, originalUsername) {
 
     newInputGroup.appendChild(usernameInput);
     newInputGroup.appendChild(passwordInput);
-    if (isExistingCredential) {
-        newInputGroup.appendChild(credentialNote);
-    }
     newInputGroup.appendChild(checkboxRow);
 
     document.getElementById('cred_inputs').appendChild(newInputGroup);
@@ -221,6 +228,92 @@ var getRealm = function(prefix) {
     }
 };
 
+var clearCredentialValidationError = function() {
+    $('#search_head_credentials_banner').text('').hide();
+};
+
+var showCredentialValidationError = function(message) {
+    $('#search_head_credentials_banner').text(message).show();
+    var banner = document.getElementById('search_head_credentials_banner');
+    if (banner && typeof banner.scrollIntoView === 'function') {
+        banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+};
+
+var getNormalizedSearchHeadTarget = function(userFqdn) {
+    var value = $.trim(userFqdn || '').replace(/\/+$/, '');
+    if (value.indexOf('token:') === 0) {
+        value = value.substring(6);
+    }
+    if (!value || value.indexOf('@') === -1) {
+        return null;
+    }
+    var target = $.trim(value.split('@', 2)[1] || '').toLowerCase();
+    if (!target) {
+        return null;
+    }
+    var parts = target.split(':');
+    if (parts.length === 1) {
+        return target + ':8089';
+    }
+    if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+        return parts[0] + ':' + parts[1];
+    }
+    return target;
+};
+
+var validateUniqueSearchHeadTargets = function() {
+    var seenTargets = {};
+    var duplicateTargets = [];
+
+    $('#cred_inputs .cred_input_group').each(function(index, group) {
+        var $group = $(group);
+        if ($group.attr('data-deleted') === 'true') {
+            return;
+        }
+
+        var originalUsername = $group.attr('data-original-username');
+        var displayUsername = $group.find('input[name="username_fqdn[]"]').val();
+        var sourceValue = originalUsername || displayUsername;
+        var target = getNormalizedSearchHeadTarget(sourceValue);
+        if (!target) {
+            return;
+        }
+
+        if (seenTargets[target]) {
+            duplicateTargets.push(target);
+            return;
+        }
+        seenTargets[target] = true;
+    });
+
+    if (duplicateTargets.length > 0) {
+        var uniqueDuplicates = duplicateTargets.filter(function(target, index, allTargets) {
+            return allTargets.indexOf(target) === index;
+        });
+        var errorMessage = 'Duplicate search head target(s) are not allowed: ' +
+            uniqueDuplicates.join(', ') +
+            '. Delete or change the duplicate entry before saving.';
+        showCredentialValidationError(errorMessage);
+        return false;
+    }
+
+    clearCredentialValidationError();
+    return true;
+};
+
+var stopSubmitIfDuplicateTargets = function(e) {
+    clearCredentialValidationError();
+    if (!validateUniqueSearchHeadTargets()) {
+        if (e) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+        return false;
+    }
+    return true;
+};
+
 // Create or update a credential, returning a promise
 var createOrUpdateCredentialAsync = function(realm, username, password) {
     return storeCredential(realm, username, password)
@@ -243,6 +336,8 @@ var createOrUpdateCredentialAsync = function(realm, username, password) {
 };
 
 $(document).ready(function() {
+    clearCredentialValidationError();
+
     // If editing an existing entry, fetch and display stored credentials
     if ($('.ManagerPageTitle').length > 0) {
         var realm = getRealm("${element['prefix']}");
@@ -276,6 +371,10 @@ $(document).ready(function() {
 
     // Handle form submission - process all credential operations
     $('form#eaiform.entityEditForm').on('submit', function(e) {
+        if (!stopSubmitIfDuplicateTargets(e)) {
+            return false;
+        }
+
         var realm = getRealm("${element['prefix']}");
         var promises = [];
 
@@ -343,6 +442,10 @@ $(document).ready(function() {
                     console.error("Some credential operations failed:", err);
                 });
         }
+    });
+
+    $(document).on('click', "form#eaiform.entityEditForm button[type='submit'], form#eaiform.entityEditForm input[type='submit']", function(e) {
+        return stopSubmitIfDuplicateTargets(e);
     });
 });
 </script>

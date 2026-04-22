@@ -52,32 +52,32 @@ def _build_service(entries):
     [
         (
             "admin@10.2.2.79",
-            {"10.2.2.79": {"username": "admin", "password": "secret", "port": None, "is_token": False}},
+            {"10.2.2.79:8089": {"host": "10.2.2.79", "username": "admin", "password": "secret", "port": None, "is_token": False}},
         ),
         (
             "admin@10.2.2.79:8089",
-            {"10.2.2.79": {"username": "admin", "password": "secret", "port": 8089, "is_token": False}},
+            {"10.2.2.79:8089": {"host": "10.2.2.79", "username": "admin", "password": "secret", "port": 8089, "is_token": False}},
         ),
         (
             "admin@search-head.example.com",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": None, "is_token": False}},
+            {"search-head.example.com:8089": {"host": "search-head.example.com", "username": "admin", "password": "secret", "port": None, "is_token": False}},
         ),
         (
             "admin@search-head.example.com:8443",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8443, "is_token": False}},
+            {"search-head.example.com:8443": {"host": "search-head.example.com", "username": "admin", "password": "secret", "port": 8443, "is_token": False}},
         ),
         (
             " admin @search-head.example.com:8089/ ",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8089, "is_token": False}},
+            {"search-head.example.com:8089": {"host": "search-head.example.com", "username": "admin", "password": "secret", "port": 8089, "is_token": False}},
         ),
         # Token-based auth (token: prefix)
         (
             "token:admin@10.2.2.79",
-            {"10.2.2.79": {"username": "admin", "password": "secret", "port": None, "is_token": True}},
+            {"10.2.2.79:8089": {"host": "10.2.2.79", "username": "admin", "password": "secret", "port": None, "is_token": True}},
         ),
         (
             "token:admin@search-head.example.com:8089",
-            {"search-head.example.com": {"username": "admin", "password": "secret", "port": 8089, "is_token": True}},
+            {"search-head.example.com:8089": {"host": "search-head.example.com", "username": "admin", "password": "secret", "port": 8089, "is_token": True}},
         ),
     ],
 )
@@ -129,3 +129,44 @@ def test_get_credentials_for_search_heads_rejects_malformed_target_formats(store
     credentials = module.get_credentials_for_search_heads(service, "illumio://scp3-emea")
 
     assert credentials == {}
+
+
+def test_get_credentials_for_search_heads_allows_same_host_with_different_ports():
+    module = _load_module()
+    service = _build_service(
+        [
+            {
+                "content": {
+                    "realm": "kvstore://scp3-emea",
+                    "username": "admin@search-head.example.com",
+                    "clear_password": "secret-1",
+                }
+            },
+            {
+                "content": {
+                    "realm": "kvstore://scp3-emea",
+                    "username": "admin2@search-head.example.com:9022",
+                    "clear_password": "secret-2",
+                }
+            },
+        ]
+    )
+
+    credentials = module.get_credentials_for_search_heads(service, "illumio://scp3-emea")
+
+    assert credentials == {
+        "search-head.example.com:8089": {
+            "host": "search-head.example.com",
+            "username": "admin",
+            "password": "secret-1",
+            "port": None,
+            "is_token": False,
+        },
+        "search-head.example.com:9022": {
+            "host": "search-head.example.com",
+            "username": "admin2",
+            "password": "secret-2",
+            "port": 9022,
+            "is_token": False,
+        },
+    }

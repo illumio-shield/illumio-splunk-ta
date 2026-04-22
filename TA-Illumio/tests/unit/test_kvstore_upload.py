@@ -59,7 +59,7 @@ def test_upload_collections_skips_host_when_remote_login_fails():
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "search-head-1.example.com": {"username": "admin", "password": "bad-password"}
+        "search-head-1.example.com:8089": {"host": "search-head-1.example.com", "username": "admin", "password": "bad-password"}
     }
     kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_workloads"]]
     kvstore_helpers.request.side_effect = RuntimeError("401 Unauthorized")
@@ -80,7 +80,7 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "search-head-2.example.com": {"username": "admin", "password": "good-password", "is_token": False}
+        "search-head-2.example.com:8089": {"host": "search-head-2.example.com", "username": "admin", "password": "good-password", "is_token": False}
     }
     kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
     kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
@@ -109,7 +109,7 @@ def test_upload_collections_logs_target_hosts_and_replicates_on_success():
     )
     info_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.INFO]
     assert any(
-        "KV-store replication targets for input 'scp3-emea': search-head-2.example.com" in message
+        "KV-store replication targets for input 'scp3-emea': search-head-2.example.com:8089" in message
         for message in info_messages
     )
     assert any("Replicating KV-store collection 'TA-Illumio/illumio_labels'" in message for message in info_messages)
@@ -121,7 +121,7 @@ def test_upload_collections_uses_port_from_stored_search_head_target():
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "10.2.2.79": {"username": "admin", "password": "good-password", "port": 8089, "is_token": False}
+        "10.2.2.79:8089": {"host": "10.2.2.79", "username": "admin", "password": "good-password", "port": 8089, "is_token": False}
     }
     kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
     kvstore_helpers.request.return_value = (b"<response><sessionKey>remote-token</sessionKey></response>", 200)
@@ -156,8 +156,8 @@ def test_upload_collections_continues_to_next_host_when_auth_probe_request_fails
     ew = Mock()
 
     splunk_utils_mod.get_credentials_for_search_heads.return_value = {
-        "bad.example.com": {"username": "admin1", "password": "token-1", "is_token": False},
-        "good.example.com": {"username": "admin2", "password": "token-2", "is_token": False},
+        "bad.example.com:8089": {"host": "bad.example.com", "username": "admin1", "password": "token-1", "is_token": False},
+        "good.example.com:8089": {"host": "good.example.com", "username": "admin2", "password": "token-2", "is_token": False},
     }
     kvstore_ops.getCollectionNamesToReplicate.return_value = [["TA-Illumio", "illumio_labels"]]
 

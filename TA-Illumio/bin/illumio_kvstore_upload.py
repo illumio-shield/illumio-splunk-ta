@@ -234,9 +234,15 @@ class KVStoreUpload:
         )
 
         # Process each SH
-        for host, cred in credentials.items():
+        for target, cred in credentials.items():
             remote_port = cred.get("port") or self.targetport
-            remote_host = host
+            remote_host = cred.get("host")
+            if not remote_host:
+                self.ew.log(
+                    EventWriter.ERROR,
+                    f"[KV Replication] Skipping KV-store replication target '{target}' for input '{input_name}': missing host in credential entry.",
+                )
+                continue
             remote_uri = "https://{}:{}".format(remote_host, remote_port)
             is_token = cred.get("is_token", False)
 
@@ -265,7 +271,7 @@ class KVStoreUpload:
                 except KeyError as k:
                     self.ew.log(
                         EventWriter.ERROR,
-                        f"[KV Replication] Skipping KV-store replication target '{host}' for input '{input_name}': malformed credential entry ({k}).",
+                        f"[KV Replication] Skipping KV-store replication target '{target}' for input '{input_name}': malformed credential entry ({k}).",
                     )
                     continue
 
