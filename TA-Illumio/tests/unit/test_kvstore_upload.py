@@ -1,8 +1,10 @@
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
 from unittest.mock import Mock, patch
+from urllib.parse import urlparse
 
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "bin" / "illumio_kvstore_upload.py"
@@ -70,7 +72,26 @@ def test_upload_collections_skips_host_when_remote_login_fails():
     kvstore_ops.copyCollection.assert_not_called()
     error_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.ERROR]
     assert any("scp3-emea" in message for message in error_messages)
-    assert any("search-head-1.example.com:8089" in message for message in error_messages)
+    # Use structured parsing instead of substring matching for host reference
+    url_pattern = re.compile(r'https?://[^\s]+|[\w.-]+:\d+')
+    found_target_host = False
+    for message in error_messages:
+        for match in url_pattern.findall(message):
+            # Handle both full URLs and host:port format
+            if match.startswith(('http://', 'https://')):
+                parsed = urlparse(match)
+                if parsed.hostname == "search-head-1.example.com" and parsed.port == 8089:
+                    found_target_host = True
+                    break
+            else:
+                # host:port format
+                parts = match.rsplit(':', 1)
+                if len(parts) == 2 and parts[0] == "search-head-1.example.com" and parts[1] == "8089":
+                    found_target_host = True
+                    break
+        if found_target_host:
+            break
+    assert found_target_host, "Error log should reference target host search-head-1.example.com:8089"
     assert any("login failed" in message for message in error_messages)
 
 
@@ -196,5 +217,25 @@ def test_upload_collections_continues_to_next_host_when_auth_probe_request_fails
     )
     error_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.ERROR]
     info_messages = [call.args[1] for call in ew.log.call_args_list if call.args[0] == DummyEventWriter.INFO]
-    assert any("Auth probe failed" in message and "bad.example.com:8089" in message for message in error_messages)
-    assert any("Replicating KV-store collection 'TA-Illumio/illumio_labels'" in message and "good.example.com:8089" in message for message in info_messages)
+
+    # Use structured parsing instead of substring matching for host references
+    def message_references_host(messages, expected_host, expected_port, required_text=None):
+        url_pattern = re.compile(r'https?://[^\s]+|[\w.-]+:\d+')
+        for message in messages:
+            if required_text and required_text not in message:
+                continue
+            for match in url_pattern.findall(message):
+                if match.startswith(('http://', 'https://')):
+                    parsed = urlparse(match)
+                    if parsed.hostname == expected_host and parsed.port == expected_port:
+                        return True
+                else:
+                    parts = match.rsplit(':', 1)
+                    if len(parts) == 2 and parts[0] == expected_host and parts[1] == str(expected_port):
+                        return True
+        return False
+
+    assert message_references_host(error_messages, "bad.example.com", 8089, "Auth probe failed"), \
+        "Error log should reference bad.example.com:8089 with 'Auth probe failed'"
+    assert message_references_host(info_messages, "good.example.com", 8089, "Replicating KV-store collection 'TA-Illumio/illumio_labels'"), \
+        "Info log should reference good.example.com:8089 with replication message"
