@@ -49,6 +49,9 @@ http_proxy = <value>
 https_proxy = <value>
     * Optional HTTPS proxy address to use when connecting to the PCE.
 
+proxy = <value>
+    * Optional proxy address to use for Splunk REST API requests during KV-store upload.
+
 http_retry_count = <value>
     * Number of times to retry HTTP requests to the PCE. Each retry has an incremental backoff, starting at 1 second, then 2, then increasing exponentially with subsequent retries.
     * Default: 5

@@ -22,6 +22,7 @@ import re
 from .kvstore_helpers import request
 from pathlib import Path
 from splunk.clilib import cli_common as cli
+from illumio_constants import KVSTORE_BATCH_DEFAULT, KVSTORE_REPLICATION_COLLECTION_LIST
 
 # Add lib folders to import path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
@@ -30,7 +31,19 @@ from splunklib.modularinput import EventWriter
 TA_PATH = "$SPLUNK_HOME/etc/apps/TA-Illumio"
 
 
-def getCollections(uri, session_key, selected_app, ew=None) -> list:
+def _build_auth_header(session_key, is_bearer_token=False):
+    """Build the Authorization header value based on auth type."""
+    if is_bearer_token:
+        return "Bearer %s" % session_key
+    return "Splunk %s" % session_key
+
+
+def _get_auth_type(is_bearer_token=False):
+    """Return string representation of auth type for logging."""
+    return "Bearer" if is_bearer_token else "Splunk"
+
+
+def getCollectionNamesToReplicate(uri, session_key, selected_app, ew=None) -> list:
     """
     Retrieve all collections for given app
 
@@ -46,7 +59,6 @@ def getCollections(uri, session_key, selected_app, ew=None) -> list:
     Returns:
         _type_: List of collections
     """
-
     url_tmpl_app = "%(server_uri)s/servicesNS/%(owner)s/%(app)s/storage/collections/config?output_mode=json&count=0"
 
     # Enumerate all collections in the apps list
@@ -60,23 +72,42 @@ def getCollections(uri, session_key, selected_app, ew=None) -> list:
             response = json.loads(response)
 
         else:
+            if ew is not None:
+                ew.log(
+                    EventWriter.INFO,
+                    f"[KV Replication] Failed to get collections from {collections_url}. Status: {response_code}, Response body: {response}",
+                )
             raise Exception("Could not connect to server: Error %s" % response_code)
 
         for entry in response["entry"]:
             entry_app = entry["acl"]["app"]
             entry_collection = entry["name"]
 
-            if selected_app == entry_app:
+            if (
+                selected_app == entry_app
+                and entry_collection in KVSTORE_REPLICATION_COLLECTION_LIST
+            ):
                 c = [entry_app, entry_collection]
                 collections.append(c)
-                ew.log(EventWriter.INFO, f"Added {entry_app}/{entry_collection} to list")
+                if ew is not None:
+                    ew.log(EventWriter.INFO, f"[KV Replication] Added {entry_app}/{entry_collection} to list")
+            elif selected_app == entry_app and ew is not None:
+                ew.log(
+                    EventWriter.INFO,
+                    f"[KV Replication] Skipping {entry_app}/{entry_collection}; not part of the replication allowlist",
+                )
     except BaseException as e:
+        if ew is not None:
+            ew.log(
+                EventWriter.ERROR,
+                f"[KV Replication] Error getting collection names to replicate: {e}",
+            )
         raise Exception(e)
 
     return collections
 
 
-def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
+def deleteCollection(ew, remote_uri, remote_session_key, app, collection, proxy=None, is_bearer_token=False):
     """Deletes the collection on remote_uri
 
     Args:
@@ -85,6 +116,8 @@ def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
         remote_session_key (_type_): _description_
         app (_type_): _description_
         collection (_type_): _description_
+        proxy (_type_, optional): _description_. Defaults to None.
+        is_bearer_token (bool, optional): If True, use Bearer auth instead of Splunk auth. Defaults to False.
 
     Raises:
         Exception: _description_
@@ -101,7 +134,7 @@ def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
 
     # Set request headers
     headers = {
-        "Authorization": "Splunk %s" % remote_session_key,
+        "Authorization": _build_auth_header(remote_session_key, is_bearer_token),
         "Content-Type": "application/json",
     }
 
@@ -109,20 +142,31 @@ def deleteCollection(ew, remote_uri, remote_session_key, app, collection):
 
     # Delete the collection contents
     try:
-        response, response_code = request("DELETE", delete_url, "", headers)
+        # Use the optional proxy for the target-side delete request when configured.
+        response, response_code = request("DELETE", delete_url, "", headers, proxy=proxy)
         ew.log(
-            EventWriter.DEBUG,
-            f"Server response for collection deletion: {delete_url} {response_code} {response}",
+            EventWriter.INFO,
+            f"[KV Replication] Server response for collection deletion: {delete_url} {response_code} (auth={_get_auth_type(is_bearer_token)}, {'via proxy' if proxy else 'direct'})",
         )
+        if response_code != 200:
+            # Log full response body to help diagnose auth failures (401) or other errors
+            ew.log(
+                EventWriter.INFO,
+                f"[KV Replication] Non-200 response body from DELETE {app}/{collection} (auth={_get_auth_type(is_bearer_token)}, {'via proxy' if proxy else 'direct'}): {response}",
+            )
         return response_code
     except BaseException as e:
+        ew.log(
+            EventWriter.ERROR,
+            f"[KV Replication] Failed to delete collection {app}/{collection} from {hostname}: {repr(e)}",
+        )
         raise Exception(
             "Failed to delete collection %s/%s from %s: %s" % (app, collection, hostname, repr(e))
         )
 
 
 def copyCollection(
-    ew, source_session_key, source_uri, target_session_key, target_uri, app, collection
+    ew, source_session_key, source_uri, target_session_key, target_uri, app, collection, proxy=None, is_bearer_token=False
 ) -> dict:
     """
     Copy collection from local system to remote system
@@ -131,10 +175,12 @@ def copyCollection(
         ew (_type_): _description_
         source_session_key (_type_): session key of source system
         source_uri (_type_): source url
-        target_session_key (_type_): session key of target system
+        target_session_key (_type_): session key of target system (or Bearer token if is_bearer_token=True)
         target_uri (_type_): target url
         app (_type_): target app
         collection (_type_): collection to be copied
+        proxy (_type_, optional): _description_. Defaults to None.
+        is_bearer_token (bool, optional): If True, use Bearer auth for target. Defaults to False.
 
     Raises:
         Exception: _description_
@@ -151,8 +197,8 @@ def copyCollection(
     posted = 0
 
     ew.log(
-        EventWriter.DEBUG,
-        f"source host is {source_host}, target host is {target_host}, app is {app}, collection is {collection}",
+        EventWriter.INFO,
+        f"[KV Replication] source host is {source_host}, target host is {target_host}, app is {app}, collection is {collection}",
     )
     # Download the collection
     staging_dir = os.path.expandvars(os.path.join(TA_PATH, "staging"))
@@ -176,27 +222,36 @@ def copyCollection(
         )
         ew.log(
             EventWriter.INFO,
-            f"result from downloading collection {collection}, is {result} and source uri is {source_uri}",
+            f"[KV Replication] result from downloading collection {collection}, is {result} and source uri is {source_uri}",
         )
         download_dt = str(timedelta(seconds=(time.time() - download_dt)))
 
         # Delete the target collection prior to uploading
         delete_dt = time.time()
-        response_code = deleteCollection(ew, target_uri, target_session_key, app, collection)
+        # Use the same optional proxy for the target-side delete that is already used for upload.
+        response_code = deleteCollection(
+            ew, target_uri, target_session_key, app, collection, proxy, is_bearer_token
+        )
 
         ew.log(
             EventWriter.INFO,
-            f"Response code from deleting collection {collection} is {response_code}",
+            f"[KV Replication] Response code from deleting collection {collection} is {response_code}",
         )
+
+        if response_code != 200:
+            raise Exception(
+                f"Failed to delete collection {app}/{collection} from {target_host}: HTTP {response_code}"
+            )
 
         if result == "success":
             upload_dt = time.time()
+            # Pass the optional proxy only to the upload step that sends KV-store data to the remote Splunk REST API.
             result, _, posted = uploadCollection(
-                ew, target_uri, target_session_key, app, collection, output_file
+                ew, target_uri, target_session_key, app, collection, output_file, proxy, is_bearer_token
             )
             ew.log(
-                EventWriter.DEBUG,
-                f"result from uploading collection {collection} is {result} and target uri is {target_uri}",
+                EventWriter.INFO,
+                f"[KV Replication] result from uploading collection {collection} is {result} and target uri is {target_uri}",
             )
         elif result == "skipped":
             result = "empty"
@@ -207,9 +262,10 @@ def copyCollection(
         if os.path.exists(output_file):
             os.remove(output_file)
 
-        if delete_dt > 0:
+        # Only convert timing values that were actually initialized for this copy run.
+        if delete_dt is not None and delete_dt > 0:
             delete_dt = str(timedelta(seconds=(time.time() - delete_dt)))
-        if upload_dt > 0:
+        if upload_dt is not None and upload_dt > 0:
             upload_dt = str(timedelta(seconds=(time.time() - upload_dt)))
 
         stats = {
@@ -223,9 +279,15 @@ def copyCollection(
             "upload_count": posted,
         }
 
-        ew.log(EventWriter.INFO, f"Stats for copy collection {collection} is {stats}")
+        ew.log(EventWriter.INFO, f"[KV Replication] Stats for copy collection {collection} is {stats}")
+        # Return the collected copy stats so callers can verify the end-to-end result.
+        return stats
 
     except BaseException as e:
+        ew.log(
+            EventWriter.ERROR,
+            f"[KV Replication] Error copying collection from {source_host} to {target_host}: {repr(e)}",
+        )
         raise Exception(
             "Error copying the collection from %s to %s: %s" % (source_host, target_host, repr(e))
         )
@@ -295,7 +357,7 @@ def downloadCollection(
             total_record_count += loop_record_count
             ew.log(
                 EventWriter.INFO,
-                f"Counted {total_record_count} total records and {loop_record_count} in this loop.",
+                f"[KV Replication] Counted {total_record_count} total records and {loop_record_count} in this loop.",
             )
 
             # Append the records to the variable
@@ -327,20 +389,20 @@ def downloadCollection(
             cursor += loop_record_count
         f.close()
 
-        ew.log(EventWriter.DEBUG, f"Retrieved {total_record_count} records from {collection}")
+        ew.log(EventWriter.INFO, f"[KV Replication] Retrieved {total_record_count} records from {collection}")
 
         if total_record_count > 0:
             if total_record_count == maxrows:
                 ew.log(
                     EventWriter.INFO,
-                    f"Downloaded rows equal to configured limit: {app}/{collection}",
+                    f"[KV Replication] Downloaded rows equal to configured limit: {app}/{collection}",
                 )
                 result = "warning"
                 message = "Downloaded rows equal to configured limit. Possible incomplete backup."
             if batch_size > maxrows and total_record_count > maxrows:
                 ew.log(
                     EventWriter.INFO,
-                    f"Downloaded KV store collection with batches exceeded the limit: {app}/{collection}",
+                    f"[KV Replication] Downloaded KV store collection with batches exceeded the limit: {app}/{collection}",
                 )
                 result = "warning"
                 message = (
@@ -349,36 +411,34 @@ def downloadCollection(
             else:
                 ew.log(
                     EventWriter.INFO,
-                    f"Downloaded KV store collection successfully: {app}/{collection}",
+                    f"[KV Replication] Downloaded KV store collection successfully: {app}/{collection}",
                 )
                 result = "success"
                 message = "Downloaded collection"
         else:
-            ew.log(EventWriter.INFO, f"Skipping collection: {collection}")
+            ew.log(EventWriter.INFO, f"[KV Replication] Skipping collection: {collection}")
             result = "skipped"
             message = "Collection is empty"
 
     except BaseException as e:
-        ew.log(EventWriter.ERROR, f"Failed to download collection: {e}")
-        result = "error"
-        message = repr(e)
-        total_record_count = 0
+        ew.log(EventWriter.ERROR, f"[KV Replication] Failed to download collection: {e}")
         if os.path.isfile(output_file):
             os.remove(output_file)
+        raise Exception(f"Failed to download collection {app}/{collection}: {e}")
 
     return result, message, total_record_count
 
 
-def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_path):
+def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_path, proxy=None, is_bearer_token=False):
     # Set request headers
     headers = {
-        "Authorization": "Splunk %s" % remote_session_key,
+        "Authorization": _build_auth_header(remote_session_key, is_bearer_token),
         "Content-Type": "application/json",
     }
 
-    limits_cfg = cli.getConfStanza("limits", "kvstore")
-
-    limit = int(limits_cfg.get("max_documents_per_batch_save", 100))
+    # Use the TA-controlled upload batch size for remote replication instead of inheriting
+    # the local Splunk instance's limits.conf value.
+    limit = KVSTORE_BATCH_DEFAULT
 
     try:
         file_name = re.search(r"(.*)(?:\/|\\)([^\/\\]+)", file_path).group(2)
@@ -394,7 +454,7 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
     except BaseException as e:
         # Account for a bug in prior versions where the record count could be wrong if "_key" was in the data and the ] would not get appended.
         ew.log(
-            EventWriter.ERROR, f"Error reading file: {e}\n\tAttempting modification (Append ']')."
+            EventWriter.ERROR, f"[KV Replication] Error reading file: {e}\n\tAttempting modification (Append ']')."
         )
 
         try:
@@ -404,7 +464,7 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
         except BaseException:
             ew.log(
                 EventWriter.ERROR,
-                f"[Append ']'] Error reading modified json input.\n\tAttempting modification (Strip '[]')",
+                f"[KV Replication] [Append ']'] Error reading modified json input.\n\tAttempting modification (Strip '[]')",
             )
             try:
                 # Reset the file cursor to 0
@@ -413,14 +473,12 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
             except BaseException as e:
                 ew.log(
                     EventWriter.ERROR,
-                    f"[Strip '[]'] Error reading modified json input for file {file_path}.  Aborting.",
+                    f"[KV Replication] [Strip '[]'] Error reading modified json input for file {file_path}.  Aborting.",
                 )
-                status = "error"
-                message = "Unable to read file"
-                return status, message, 0
+                raise Exception(f"Unable to read file {file_path}: {e}")
 
     content_len = len(contents)
-    ew.log(EventWriter.DEBUG, f"File {file_name} entries: {content_len}")
+    ew.log(EventWriter.INFO, f"[KV Replication] File {file_name} entries: {content_len}")
 
     i = 0
     batch_number = 1
@@ -434,8 +492,8 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
         server_uri=remote_uri, owner="nobody", app=app, collection=collection
     )
     ew.log(
-        EventWriter.DEBUG,
-        f"Server url to which POST will happen from uploadCollection is {record_url}",
+        EventWriter.INFO,
+        f"[KV Replication] Server url to which POST will happen from uploadCollection is {record_url}",
     )
     result = None
     while i < content_len:
@@ -446,25 +504,38 @@ def uploadCollection(ew, remote_uri, remote_session_key, app, collection, file_p
         i += limit
 
         ew.log(
-            EventWriter.DEBUG,
-            f"Batch number: {batch_number} ({sys.getsizeof(batch)} bytes / {len(batch)} records)",
+            EventWriter.INFO,
+            f"[KV Replication] Batch number: {batch_number} ({sys.getsizeof(batch)} bytes / {len(batch)} records)",
         )
 
         # Upload the restored records to the server
         try:
-            _, response_code = request(
-                "POST", record_url, json.dumps(batch), headers
-            )  # pylint: disable=unused-variable
+            ew.log(
+                EventWriter.INFO,
+                f"[KV Replication] Uploading batch {batch_number} for {app}/{collection} to {record_url} (auth={_get_auth_type(is_bearer_token)}, {'via proxy' if proxy else 'direct'})",
+            )
+            # Apply the optional proxy from the input stanza only when it was configured.
+            response_body, response_code = request(
+                "POST", record_url, json.dumps(batch), headers, proxy=proxy
+            )
+            ew.log(
+                EventWriter.INFO,
+                f"[KV Replication] Batch {batch_number} upload response: status={response_code} ({'via proxy' if proxy else 'direct'})",
+            )
             batch_number += 1
             posted += len(batch)
             if response_code != 200:
+                # Log full response body to help diagnose auth failures (401) or other errors
+                ew.log(
+                    EventWriter.INFO,
+                    f"[KV Replication] Non-200 response body from batch upload {app}/{collection} batch {batch_number - 1} (auth={_get_auth_type(is_bearer_token)}, {'via proxy' if proxy else 'direct'}): {response_body}",
+                )
                 raise Exception("Error %d when posting collection contents" % response_code)
 
         except BaseException as e:
-            result = "error"
             message = "Failed to upload collection: %s" % repr(e)
-            ew.log(EventWriter.DEBUG, f"{message}")
-            i = content_len
+            ew.log(EventWriter.ERROR, f"[KV Replication] {message}")
+            raise Exception(message)
 
     if result is None:
         result = "success"
@@ -483,5 +554,5 @@ __all__ = [
     "downloadCollection",
     "deleteCollection",
     "copyCollection",
-    "getCollections",
+    "getCollectionNamesToReplicate",
 ]

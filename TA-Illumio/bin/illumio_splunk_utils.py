@@ -39,12 +39,12 @@ def get_password(service: client.Service, name: str) -> str:
         raise Exception(f"Failed to retrieve password {name} from storage/passwords: {e}")
 
 
-def get_credentials_for_search_heads(service: client.Service) -> dict:
+def get_credentials_for_search_heads(service: client.Service, input_name: str) -> dict:
     """_summary_
 
     Args:
         service (client.Service): _description_
-        realm (str): _description_
+        input_name (str): data input name used to scope the search head credential realm.
 
     Returns:
         dict: _description_
@@ -53,14 +53,43 @@ def get_credentials_for_search_heads(service: client.Service) -> dict:
     try:
         storage_passwords = service.storage_passwords
         credentials = {}
+        # Scope the credential lookup to the current input so one stanza cannot pick up another stanza's
+        # search head credentials from storage/passwords.
+        credential_realm = f"{SEARCH_HEAD_CREDENTIALS_PREFIX}://{input_name.replace('illumio://', '')}"
         for entry in storage_passwords.list():
             # The reason SEARCH_HEAD_CREDENTIALS_PREFIX is used here, is kvstore is the prefix for storing search head credentials
-            if SEARCH_HEAD_CREDENTIALS_PREFIX in entry.name:
+            if entry["content"].get("realm") == credential_realm:
                 user_fqdn = entry["content"]["username"]
-                user, fqdn = user_fqdn.split("@")
-                credentials[fqdn] = {
+                # Check for 'token:' prefix indicating auth token instead of password
+                is_token = user_fqdn.startswith("token:")
+                if is_token:
+                    user_fqdn = user_fqdn[6:]  # Remove 'token:' prefix
+                # Skip malformed search head credentials instead of failing the entire modular input run.
+                if "@" not in user_fqdn:
+                    continue
+                user, fqdn = user_fqdn.split("@", 1)
+                user = user.strip()
+                fqdn = fqdn.strip().rstrip("/")
+                if not user or not fqdn:
+                    continue
+                port = None
+                if ":" in fqdn:
+                    if fqdn.count(":") != 1:
+                        continue
+                    fqdn, port_text = fqdn.rsplit(":", 1)
+                    if not fqdn or not port_text.isdigit():
+                        continue
+                    port = int(port_text)
+                    if port < 1 or port > 65535:
+                        continue
+                effective_port = port or 8089
+                target = f"{fqdn}:{effective_port}"
+                credentials[target] = {
+                    "host": fqdn,
                     "username": user,
                     "password": entry["content"]["clear_password"],
+                    "port": port if port else None,
+                    "is_token": is_token,
                 }
         return credentials
     except Exception as e:

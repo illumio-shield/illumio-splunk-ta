@@ -399,6 +399,28 @@ To uninstall the Illumio Technical Add-On for Splunk, follow these steps:
 
 ## Release Notes  
 
+### Version 4.1.2
+
+**KV Store Replication Enhancements**
+
+* Added support for token-based authentication when replicating KV Store to remote Search Heads
+    * New "Auth Token" checkbox per Search Head credential allows using Splunk auth tokens instead of username/password login.
+    * Tokens bypass session-based authentication, improving reliability for Splunk Cloud deployments.
+    * JWT token validation with expiry checking and detailed logging.
+* Proxy support for KV Store replication
+    * Replication can now be routed through the configured basic-auth proxy.
+    * Added auth probe to verify session validity before starting replication.
+* Enhanced logging throughout the KV Store replication flow
+    * All logs now use `[KV Replication]` prefix for easier filtering.
+    * Proxy usage indicated with `(via proxy)` in log messages.
+
+**Search Head Credential UI Fixes**
+
+* Fixed credential loading when editing existing data inputs.
+* Fixed credential deletion not persisting on save.
+* Improved layout and styling of Search Head configuration section.
+* Editing is no more allowed for existing SH credentials. To change credentials, it must be deleted, saved and re-entered.
+
 ### Version 4.1.0
 
 * Illumio App for Splunk & Illumio Technology Add-On for Splunk apps are now Splunk 10 compatible. 
