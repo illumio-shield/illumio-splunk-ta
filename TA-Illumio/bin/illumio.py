@@ -593,7 +593,22 @@ class Illumio(Script):
         """
         kvstores = self.service.kvstore
         kvstore = kvstores[name]
-        old = kvstore.data.query(query={"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id)})
+
+        query_filter = {"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id)}
+        try:
+            kvstore_conf = self.service.confs["limits"]["kvstore"]
+            batch_size = int(kvstore_conf["max_rows_per_query"])
+        except Exception:
+            batch_size = KVSTORE_QUERY_BATCH_DEFAULT
+
+        old = []
+        skip = 0
+        while True:
+            page = kvstore.data.query(query=query_filter, limit=batch_size, skip=skip, sort="_key:1")
+            old.extend(page)
+            if len(page) < batch_size:
+                break
+            skip += len(page)
 
         # cast org_id to a string here - KVStore lookups can't use wildcards for number fields
         fields = {"pce_fqdn": params.pce_fqdn, "org_id": str(params.org_id), "deleted": False}
